@@ -9,8 +9,37 @@ input, button, textarea, select { font: inherit; }
 .btn:disabled { opacity: .65; cursor: not-allowed; }
 .input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: white; }
 
+.app-shell { display: grid; gap: 14px; }
+.hero { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; background: linear-gradient(135deg, #eff6ff 0%, #ecfeff 100%); }
+.hero-title { margin: 0; font-size: clamp(24px, 4vw, 36px); font-weight: 800; color: #0f172a; }
+.hero-subtitle { margin: 4px 0 0; font-size: 14px; color: #334155; font-weight: 700; }
+.hero-desc { margin: 10px 0 0; color: #475569; max-width: 720px; line-height: 1.45; }
+.hero-badge { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 999px; padding: 7px 11px; font-size: 12px; font-weight: 700; }
+
+.main-grid { display: grid; gap: 14px; grid-template-columns: 1.6fr 1fr; }
+.left-stack, .right-stack { display: grid; gap: 14px; align-content: start; }
+.panel { display: grid; gap: 10px; box-shadow: 0 10px 30px -22px rgba(15, 23, 42, .45); }
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.panel-head h2 { margin: 0; font-size: 18px; color: #0f172a; }
+.chip { font-size: 11px; font-weight: 700; color: #475569; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 999px; padding: 4px 8px; }
+.panel-note { margin: 0; color: #64748b; font-size: 14px; }
+.panel-error { margin: 0; color: #b91c1c; font-weight: 600; }
+
+.chart-wrap { border: 1px solid #e2e8f0; background: #fcfdff; border-radius: 12px; padding: 6px; width: 100%; min-width: 0; overflow: hidden; }
+
+.job-list { display: grid; gap: 8px; max-height: 420px; overflow: auto; }
+.job-item { text-align: left; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; background: #fff; cursor: pointer; transition: .18s ease; }
+.job-item:hover { border-color: #bfdbfe; background: #f8fbff; }
+.job-item.active { border-width: 2px; border-color: #1d4ed8; background: #eef4ff; }
+.job-title { margin: 0; font-weight: 700; color: #0f172a; overflow-wrap: anywhere; }
+.job-meta { margin: 6px 0 0; font-size: 13px; font-weight: 600; }
+
+.report-block { white-space: pre-wrap; line-height: 1.62; color: #1f2937; font-size: 14px; background: #fcfdff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; max-height: 500px; overflow: auto; }
+
 @media (max-width: 768px) {
 	.container { padding: 14px; }
 	.card { padding: 12px; border-radius: 10px; }
 	.btn { width: 100%; }
+	.hero { flex-direction: column; }
+	.main-grid { grid-template-columns: 1fr; }
 }

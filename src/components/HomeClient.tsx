@@ -213,112 +213,114 @@ export default function HomeClient() {
   }, [previewRows]);
 
   return (
-    <div className="container grid" style={{ gap: 16 }}>
-      <section className="card grid" style={{ gap: 10 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 8 }}>
-          <h1 style={{ margin: 0, fontSize: "clamp(20px, 4vw, 30px)" }}>ardasemihcil · Verimlilik Dashboard</h1>
-          <span style={{ fontSize: 13, color: "#374151" }}>Girişsiz kullanım aktif</span>
+    <div className="container app-shell">
+      <section className="hero card">
+        <div>
+          <h1 className="hero-title">ardasemihcil</h1>
+          <p className="hero-subtitle">Fabrika Verimlilik Analiz Dashboard</p>
+          <p className="hero-desc">Excel/CSV dosyanı yükle, sistem veriyi işler, Google AI ile rapor üretir ve metrikleri grafiklere dönüştürür.</p>
         </div>
-        <p style={{ margin: 0, color: "#4b5563" }}>
-          Excel/CSV dosyanı yükle, sistem veriyi işler, Google AI ile rapor üretir ve grafiklere dönüştürür.
-        </p>
+        <div className="hero-badge">No-Login Mode</div>
       </section>
 
-      <section className="card grid" style={{ gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Dosya Yükle</h2>
-        <input
-          className="input"
-          type="file"
-          accept=".xlsx,.xls,.csv"
-          onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-        />
-        <button className="btn" disabled={busy} onClick={() => void uploadAndStart()}>
-          {busy ? "İşleniyor..." : "Analiz Et"}
-        </button>
-      </section>
-
-      <section className="card grid" style={{ gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Analiz İşleri</h2>
-        {jobs.length === 0 ? (
-          <p style={{ margin: 0 }}>Henüz analiz işi yok.</p>
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {jobs.map((job) => (
-              <button
-                key={job.id}
-                type="button"
-                onClick={() => setSelectedJobId(job.id)}
-                style={{
-                  textAlign: "left",
-                  border: selectedJobId === job.id ? "2px solid #1d4ed8" : "1px solid #e5e7eb",
-                  borderRadius: 10,
-                  padding: 10,
-                  background: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                <p style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>{job.file_name}</p>
-                <p style={{ margin: "6px 0", fontSize: 13, color: statusColor(job.status) }}>
-                  {humanizeStatus(job.status)} · {new Date(job.created_at).toLocaleString("tr-TR")}
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="card grid" style={{ gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Görselleştirme</h2>
-        {!selectedJob ? (
-          <p style={{ margin: 0 }}>Grafik için bir iş seç.</p>
-        ) : chartModel.lineData.length === 0 ? (
-          <p style={{ margin: 0 }}>
-            Sayısal sütun tespit edilemedi veya veri henüz işlenmedi. Durum: {humanizeStatus(selectedJob.status)}
-          </p>
-        ) : (
-          <>
-            <p style={{ margin: 0, fontSize: 13, color: "#4b5563" }}>
-              Tespit edilen metrik sütunu: <strong>{chartModel.detectedColumn}</strong>
-            </p>
-            <div style={{ width: "100%", height: 260 }}>
-              <ResponsiveContainer>
-                <LineChart data={chartModel.lineData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="index" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+      <section className="main-grid">
+        <div className="left-stack">
+          <section className="card panel">
+            <div className="panel-head">
+              <h2>Dosya Yükle</h2>
             </div>
-            <div style={{ width: "100%", height: 240 }}>
-              <ResponsiveContainer>
-                <BarChart data={chartModel.barData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="key" hide />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="avg" fill="#059669" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <input
+              className="input"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+            />
+            <button className="btn" disabled={busy} onClick={() => void uploadAndStart()}>
+              {busy ? "İşleniyor..." : "Analiz Et"}
+            </button>
+            {message ? <p className="panel-note">{message}</p> : null}
+          </section>
+
+          <section className="card panel">
+            <div className="panel-head">
+              <h2>Görselleştirme</h2>
+              {chartModel.detectedColumn ? <span className="chip">Metrik: {chartModel.detectedColumn}</span> : null}
             </div>
-          </>
-        )}
-      </section>
 
-      <section className="card grid" style={{ gap: 8 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>AI Rapor</h2>
-        {selectedJob?.report_text ? (
-          <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{selectedJob.report_text}</div>
-        ) : (
-          <p style={{ margin: 0 }}>
-            {selectedJob ? `Rapor henüz hazır değil. Durum: ${humanizeStatus(selectedJob.status)}` : "Henüz iş seçilmedi."}
-          </p>
-        )}
-        {selectedJob?.error_text ? <p style={{ margin: 0, color: "#b91c1c" }}>Hata: {selectedJob.error_text}</p> : null}
-      </section>
+            {!selectedJob ? (
+              <p className="panel-note">Grafik için bir iş seç.</p>
+            ) : chartModel.lineData.length === 0 ? (
+              <p className="panel-note">Sayısal sütun tespit edilemedi veya veri henüz işlenmedi. Durum: {humanizeStatus(selectedJob.status)}</p>
+            ) : (
+              <>
+                <div className="chart-wrap" style={{ height: 280 }}>
+                  <ResponsiveContainer width="100%" height={260} minWidth={280} minHeight={220}>
+                    <LineChart data={chartModel.lineData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="index" />
+                      <YAxis />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="chart-wrap" style={{ height: 250 }}>
+                  <ResponsiveContainer width="100%" height={230} minWidth={280} minHeight={200}>
+                    <BarChart data={chartModel.barData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="key" hide />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="avg" fill="#059669" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
 
-      {message ? <p style={{ margin: 0 }}>{message}</p> : null}
+        <div className="right-stack">
+          <section className="card panel">
+            <div className="panel-head">
+              <h2>Analiz İşleri</h2>
+              <span className="chip">{jobs.length} kayıt</span>
+            </div>
+            {jobs.length === 0 ? (
+              <p className="panel-note">Henüz analiz işi yok.</p>
+            ) : (
+              <div className="job-list">
+                {jobs.map((job) => (
+                  <button
+                    key={job.id}
+                    type="button"
+                    className={`job-item ${selectedJobId === job.id ? "active" : ""}`}
+                    onClick={() => setSelectedJobId(job.id)}
+                  >
+                    <p className="job-title">{job.file_name}</p>
+                    <p className="job-meta" style={{ color: statusColor(job.status) }}>
+                      {humanizeStatus(job.status)} · {new Date(job.created_at).toLocaleString("tr-TR")}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card panel">
+            <div className="panel-head">
+              <h2>AI Rapor</h2>
+              {selectedJob ? <span className="chip">{humanizeStatus(selectedJob.status)}</span> : null}
+            </div>
+            {selectedJob?.report_text ? (
+              <div className="report-block">{selectedJob.report_text}</div>
+            ) : (
+              <p className="panel-note">{selectedJob ? `Rapor henüz hazır değil. Durum: ${humanizeStatus(selectedJob.status)}` : "Henüz iş seçilmedi."}</p>
+            )}
+            {selectedJob?.error_text ? <p className="panel-error">Hata: {selectedJob.error_text}</p> : null}
+          </section>
+        </div>
+      </section>
     </div>
   );
 }

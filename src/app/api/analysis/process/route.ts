@@ -111,9 +111,11 @@ const generateGeminiReport = async (prompt: string) => {
 };
 
 export async function POST(request: NextRequest) {
+  let currentJobId = "";
   try {
     const body = (await request.json().catch(() => ({}))) as ProcessBody;
     const jobId = String(body.jobId ?? "").trim();
+    currentJobId = jobId;
     if (!jobId) {
       return NextResponse.json({ success: false, error: "jobId eksik." }, { status: 400 });
     }
@@ -147,7 +149,7 @@ export async function POST(request: NextRequest) {
         .from("analysis_jobs")
         .update({ status: "failed", error_text: fileError?.message ?? "Dosya indirilemedi." })
         .eq("id", job.id);
-      return NextResponse.json({ success: false, error: "Dosya indirilemedi." }, { status: 500 });
+      return NextResponse.json({ success: false, error: "Dosya indirilemedi." }, { status: 200 });
     }
 
     const arrayBuffer = await fileData.arrayBuffer();
@@ -176,7 +178,7 @@ export async function POST(request: NextRequest) {
         .from("analysis_jobs")
         .update({ status: "failed", error_text: insertError.message })
         .eq("id", job.id);
-      return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+      return NextResponse.json({ success: false, error: insertError.message }, { status: 200 });
     }
 
     const summary = summarizeRows(rows);
@@ -189,12 +191,22 @@ export async function POST(request: NextRequest) {
       .eq("id", job.id);
 
     if (updateError) {
-      return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
+      return NextResponse.json({ success: false, error: updateError.message }, { status: 200 });
     }
 
     return NextResponse.json({ success: true, jobId: job.id, processedRows: rowPayload.length }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    if (currentJobId) {
+      try {
+        const serviceSupabase = createServiceClient();
+        await serviceSupabase
+          .from("analysis_jobs")
+          .update({ status: "failed", error_text: message })
+          .eq("id", currentJobId);
+      } catch {
+      }
+    }
+    return NextResponse.json({ success: false, error: message }, { status: 200 });
   }
 }
