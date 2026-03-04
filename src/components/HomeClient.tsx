@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, getSupabasePublicEnvError } from "@/lib/supabase/client";
 
 type AnalysisJob = {
   id: string;
@@ -21,7 +21,11 @@ const humanizeStatus = (status: AnalysisJob["status"]) => {
 };
 
 export default function HomeClient() {
-  const supabase = useMemo(() => createClient(), []);
+  const supabaseEnvError = getSupabasePublicEnvError();
+  const supabase = useMemo(() => {
+    if (supabaseEnvError) return null;
+    return createClient();
+  }, [supabaseEnvError]);
 
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
@@ -32,6 +36,7 @@ export default function HomeClient() {
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
 
   const refreshJobs = useCallback(async () => {
+    if (!supabase) return;
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -70,6 +75,7 @@ export default function HomeClient() {
   }, [signedIn, refreshJobs]);
 
   const signIn = async () => {
+    if (!supabase) return;
     setMessage("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
@@ -82,6 +88,7 @@ export default function HomeClient() {
   };
 
   const signOut = async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
     setSignedIn(false);
     setJobs([]);
@@ -89,6 +96,10 @@ export default function HomeClient() {
   };
 
   const uploadAndStart = async () => {
+    if (!supabase) {
+      setMessage("Supabase bağlantı ayarları eksik.");
+      return;
+    }
     if (!selectedFile) {
       setMessage("Önce .xlsx veya .csv dosyası seç.");
       return;
@@ -158,6 +169,16 @@ export default function HomeClient() {
   return (
     <div className="container grid" style={{ gap: 16 }}>
       <h1 style={{ margin: 0, fontSize: "clamp(20px, 4vw, 30px)" }}>ardasemihcil · Fabrika Verimlilik Analiz Platformu</h1>
+
+      {supabaseEnvError ? (
+        <section className="card grid">
+          <h2 style={{ margin: 0, fontSize: 18 }}>Ortam Değişkeni Hatası</h2>
+          <p style={{ margin: 0 }}>
+            {supabaseEnvError} Vercel proje ayarlarında hem <strong>Preview</strong> hem <strong>Production</strong> için
+            `NEXT_PUBLIC_SUPABASE_URL` ve `NEXT_PUBLIC_SUPABASE_ANON_KEY` tanımla, sonra redeploy et.
+          </p>
+        </section>
+      ) : null}
 
       <section className="card grid">
         <h2 style={{ margin: 0, fontSize: 18 }}>1) Kimlik Doğrulama</h2>
