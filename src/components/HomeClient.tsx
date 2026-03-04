@@ -61,6 +61,14 @@ export default function HomeClient() {
     void refreshJobs();
   }, [refreshJobs]);
 
+  useEffect(() => {
+    if (!signedIn) return;
+    const interval = window.setInterval(() => {
+      void refreshJobs();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [signedIn, refreshJobs]);
+
   const signIn = async () => {
     setMessage("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -124,6 +132,7 @@ export default function HomeClient() {
     const payload = (await response.json().catch(() => ({}))) as {
       success?: boolean;
       error?: string;
+      job?: { id: string };
     };
 
     if (!payload.success) {
@@ -132,15 +141,23 @@ export default function HomeClient() {
       return;
     }
 
+    if (payload.job?.id) {
+      await fetch("/api/analysis/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: payload.job.id }),
+      });
+    }
+
     setSelectedFile(null);
     setBusy(false);
-    setMessage("Dosya yüklendi ve analiz işi oluşturuldu.");
+    setMessage("Dosya yüklendi, işleme ve Google AI rapor üretimi başlatıldı.");
     await refreshJobs();
   };
 
   return (
     <div className="container grid" style={{ gap: 16 }}>
-      <h1 style={{ margin: 0 }}>ardasemihcil · Fabrika Verimlilik Analiz Platformu</h1>
+      <h1 style={{ margin: 0, fontSize: "clamp(20px, 4vw, 30px)" }}>ardasemihcil · Fabrika Verimlilik Analiz Platformu</h1>
 
       <section className="card grid">
         <h2 style={{ margin: 0, fontSize: 18 }}>1) Kimlik Doğrulama</h2>
@@ -190,7 +207,7 @@ export default function HomeClient() {
           <p style={{ margin: 0 }}>Henüz analiz işi yok.</p>
         ) : (
           jobs.map((job) => (
-            <div key={job.id} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}>
+            <div key={job.id} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 10, overflowWrap: "anywhere" }}>
               <p style={{ margin: 0, fontWeight: 600 }}>{job.file_name}</p>
               <p style={{ margin: "6px 0", fontSize: 13 }}>
                 Durum: {humanizeStatus(job.status)} · {new Date(job.created_at).toLocaleString("tr-TR")}

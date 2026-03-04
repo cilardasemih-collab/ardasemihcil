@@ -8,3 +8,9 @@ input, button, textarea, select { font: inherit; }
 .btn { border: 0; border-radius: 8px; padding: 10px 14px; background: #1d4ed8; color: white; cursor: pointer; }
 .btn:disabled { opacity: .65; cursor: not-allowed; }
 .input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: white; }
+
+@media (max-width: 768px) {
+	.container { padding: 14px; }
+	.card { padding: 12px; border-radius: 10px; }
+	.btn { width: 100%; }
+}

@@ -13,7 +13,8 @@ Bu proje **wamtes'ten tamamen bağımsızdır**. Ayrı Supabase projesi + ayrı 
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=... # opsiyonel
-OPENAI_API_KEY=...            # opsiyonel
+GOOGLE_AI_API_KEY=...
+GOOGLE_AI_MODEL=gemini-1.5-flash
 ```
 
 ## 3) Migration çalıştır
@@ -36,6 +37,15 @@ Bu migration şunları kurar:
 ```bash
 npm run dev
 ```
+
+## Google AI akışı
+- Kullanıcı dosya yükler, `analysis_jobs` kaydı oluşur.
+- Sistem dosyayı parse eder (`csv/xlsx`) ve `processed_data` tablosuna yazar.
+- Gemini ile Türkçe verimlilik raporu üretir ve `analysis_jobs.report_text` alanına kaydeder.
+
+## Responsive UI
+- Arayüz mobil ve masaüstü uyumludur.
+- Mobilde butonlar tam genişlikte, kart boşlukları optimize edilmiştir.
 
 ## 5) Ayrı Vercel projesine deploy et
 - Vercel'de **yeni** project oluştur (`ardasemihcil`)
