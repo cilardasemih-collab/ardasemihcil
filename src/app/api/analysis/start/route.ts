@@ -1,33 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const formData = await request.formData();
+    const file = formData.get("file") as File | null;
 
-    if (!user?.id) {
-      return NextResponse.json({ success: false, error: "Giriş gerekli." }, { status: 401 });
+    if (!file || file.size <= 0) {
+      return NextResponse.json({ success: false, error: "Dosya bulunamadı." }, { status: 400 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as {
-      fileName?: string;
-      filePath?: string;
-    };
-
-    const fileName = String(body.fileName ?? "").trim();
-    const filePath = String(body.filePath ?? "").trim();
-
-    if (!fileName || !filePath) {
-      return NextResponse.json({ success: false, error: "Dosya bilgisi eksik." }, { status: 400 });
+    const allowed = [".xlsx", ".xls", ".csv"];
+    const fileName = file.name || `upload-${Date.now()}.csv`;
+    const lowerName = fileName.toLowerCase();
+    if (!allowed.some((ext) => lowerName.endsWith(ext))) {
+      return NextResponse.json({ success: false, error: "Sadece .xlsx, .xls veya .csv yüklenebilir." }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const serviceSupabase = createServiceClient();
+
+    const safeName = fileName.replace(/\s+/g, "-");
+    const filePath = `public/${Date.now()}-${safeName}`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+
+    const { error: uploadError } = await serviceSupabase.storage
+      .from("uploaded-excels")
+      .upload(filePath, bytes, {
+        upsert: false,
+        contentType: file.type || "application/octet-stream",
+      });
+
+    if (uploadError) {
+      return NextResponse.json({ success: false, error: uploadError.message }, { status: 500 });
+    }
+
+    const { data, error } = await serviceSupabase
       .from("analysis_jobs")
       .insert({
-        user_id: user.id,
+        user_id: null,
         file_name: fileName,
         file_path: filePath,
         status: "uploaded",

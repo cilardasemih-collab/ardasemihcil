@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 
 type ProcessBody = {
   jobId?: string;
@@ -8,7 +8,7 @@ type ProcessBody = {
 
 type JobRow = {
   id: string;
-  user_id: string;
+  user_id: string | null;
   file_name: string;
   file_path: string;
   status: "uploaded" | "processing" | "report_ready" | "failed";
@@ -112,15 +112,6 @@ const generateGeminiReport = async (prompt: string) => {
 
 export async function POST(request: NextRequest) {
   try {
-    const authSupabase = await createClient();
-    const {
-      data: { user },
-    } = await authSupabase.auth.getUser();
-
-    if (!user?.id) {
-      return NextResponse.json({ success: false, error: "Giriş gerekli." }, { status: 401 });
-    }
-
     const body = (await request.json().catch(() => ({}))) as ProcessBody;
     const jobId = String(body.jobId ?? "").trim();
     if (!jobId) {
@@ -136,10 +127,6 @@ export async function POST(request: NextRequest) {
 
     if (jobError || !job) {
       return NextResponse.json({ success: false, error: "İş bulunamadı." }, { status: 404 });
-    }
-
-    if (job.user_id !== user.id) {
-      return NextResponse.json({ success: false, error: "Bu işe erişim yok." }, { status: 403 });
     }
 
     if (job.status === "processing") {
