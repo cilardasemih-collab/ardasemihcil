@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateOeeActionPlan } from "@/lib/ai/generateActionPlan";
 import { generateEngineeringReport } from "@/lib/ai/generateEngineeringReport";
+import { generateGeminiText } from "@/lib/ai/geminiClient";
 import {
   buildOptimizationSummary,
   parseFullCsvContent,
@@ -52,55 +53,19 @@ const buildPreviewFromFullRows = (parsedCsv: ParsedCsvData): CsvPreview => {
 };
 
 const callGeminiForDiagnosis = async (preview: CsvPreview): Promise<AiDiagnosis> => {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GOOGLE_AI_API_KEY tanimli degil.");
-  }
-
-  const model = process.env.GOOGLE_AI_MODEL || "gemini-1.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
   const userPayload = {
     headers: preview.headers,
     first_five_rows: preview.firstFiveRows,
   };
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `${buildSystemPrompt()}\n\nVERI OZETI:\n${JSON.stringify(userPayload, null, 2)}`,
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 700,
-        responseMimeType: "application/json",
-      },
-    }),
+  const { text: rawJson } = await generateGeminiText({
+    prompt: `${buildSystemPrompt()}\n\nVERI OZETI:\n${JSON.stringify(userPayload, null, 2)}`,
+    responseMimeType: "application/json",
+    temperature: 0.1,
+    maxOutputTokens: 700,
+    timeoutMs: 30000,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`AI servisi hatasi: ${errorText}`);
-  }
-
-  const payload = (await response.json()) as {
-    candidates?: Array<{
-      content?: {
-        parts?: Array<{ text?: string }>;
-      };
-    }>;
-  };
-
-  const rawJson = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("\n").trim();
   if (!rawJson) {
     throw new Error("AI bos yanit dondu.");
   }

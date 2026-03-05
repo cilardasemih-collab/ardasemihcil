@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { createServiceClient } from "@/lib/supabase/server";
+import { generateGeminiText as generateGeminiTextWithFallback } from "@/lib/ai/geminiClient";
 
 export const runtime = "nodejs";
 
@@ -276,35 +277,13 @@ const generateGeminiText = async (prompt: string) => {
     return "GOOGLE_AI_API_KEY tanımlı olmadığı için otomatik özet üretildi: Veri yüklendi, satırlar işlendi. Lütfen Google AI anahtarını ekleyip tekrar çalıştır.";
   }
 
-  const model = process.env.GOOGLE_AI_MODEL || "gemini-1.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 1200,
-      },
-    }),
+  const { text } = await generateGeminiTextWithFallback({
+    prompt,
+    temperature: 0.3,
+    maxOutputTokens: 1200,
+    timeoutMs: 45000,
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Google AI hatası: ${text}`);
-  }
-
-  const payload = (await response.json()) as {
-    candidates?: Array<{
-      content?: {
-        parts?: Array<{ text?: string }>;
-      };
-    }>;
-  };
-
-  const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("\n").trim();
   if (!text) throw new Error("Google AI boş cevap döndü.");
   return text;
 };
