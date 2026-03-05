@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ResponsiveContainer,
   LineChart,
   Line,
   CartesianGrid,
@@ -54,6 +53,7 @@ export default function HomeClient() {
   const [jobs, setJobs] = useState<AnalysisJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
+  const [chartHostWidth, setChartHostWidth] = useState(0);
 
   const refreshJobs = useCallback(async () => {
     const response = await fetch("/api/analysis/jobs", { cache: "no-store" });
@@ -113,6 +113,19 @@ export default function HomeClient() {
   useEffect(() => {
     void refreshPreview();
   }, [refreshPreview]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      const host = document.getElementById("chart-host");
+      if (!host) return;
+      const next = Math.floor(host.getBoundingClientRect().width);
+      if (next > 0) setChartHostWidth(next);
+    };
+
+    updateWidth();
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
 
   const uploadAndStart = async () => {
     if (!selectedFile) {
@@ -253,27 +266,31 @@ export default function HomeClient() {
               <p className="panel-note">Sayısal sütun tespit edilemedi veya veri henüz işlenmedi. Durum: {humanizeStatus(selectedJob.status)}</p>
             ) : (
               <>
-                <div className="chart-wrap" style={{ height: 280 }}>
-                  <ResponsiveContainer width="100%" height={260} minWidth={280} minHeight={220}>
-                    <LineChart data={chartModel.lineData}>
+                <div id="chart-host" className="chart-wrap" style={{ height: 280 }}>
+                  {chartHostWidth > 0 ? (
+                    <LineChart width={Math.max(260, chartHostWidth - 18)} height={260} data={chartModel.lineData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="index" />
                       <YAxis />
                       <Tooltip />
                       <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2.5} dot={false} />
                     </LineChart>
-                  </ResponsiveContainer>
+                  ) : (
+                    <p className="panel-note">Grafik hazırlanıyor...</p>
+                  )}
                 </div>
                 <div className="chart-wrap" style={{ height: 250 }}>
-                  <ResponsiveContainer width="100%" height={230} minWidth={280} minHeight={200}>
-                    <BarChart data={chartModel.barData}>
+                  {chartHostWidth > 0 ? (
+                    <BarChart width={Math.max(260, chartHostWidth - 18)} height={230} data={chartModel.barData}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="key" hide />
                       <YAxis />
                       <Tooltip />
                       <Bar dataKey="avg" fill="#059669" radius={[8, 8, 0, 0]} />
                     </BarChart>
-                  </ResponsiveContainer>
+                  ) : (
+                    <p className="panel-note">Grafik hazırlanıyor...</p>
+                  )}
                 </div>
               </>
             )}

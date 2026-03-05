@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { createServiceClient } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
+
 type ProcessBody = {
   jobId?: string;
 };
