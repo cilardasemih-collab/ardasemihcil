@@ -4,7 +4,10 @@ import { useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "rea
 import { CheckCircle2, Loader2, UploadCloud } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
+import AnomalyTable from "@/components/AnomalyTable";
+import ContributionChart from "@/components/ContributionChart";
 import EnergyChart from "@/components/EnergyChart";
+import OeeChart from "@/components/OeeChart";
 import { supabaseClient } from "@/lib/supabaseClient";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
@@ -15,6 +18,32 @@ type OptimizationSummary = {
   newTotalEnergy: number;
   energySaved: number;
   optimizationMethod: string;
+};
+
+type OeeSummary = {
+  availabilityBefore: number;
+  availabilityAfter: number;
+  performanceBefore: number;
+  performanceAfter: number;
+  qualityBefore: number;
+  qualityAfter: number;
+  oeeBefore: number;
+  oeeAfter: number;
+  oeeGain: number;
+};
+
+type ColumnContribution = {
+  column: string;
+  oldValue: number;
+  newValue: number;
+  saved: number;
+};
+
+type AnomalyItem = {
+  rowIndex: number;
+  column: string;
+  value: number;
+  zScore: number;
 };
 
 const RAW_FILES_BUCKET = "raw-files";
@@ -32,6 +61,10 @@ export default function FileUpload() {
   const [message, setMessage] = useState<string>("");
   const [progress, setProgress] = useState<number>(0);
   const [summary, setSummary] = useState<OptimizationSummary | null>(null);
+  const [oeeSummary, setOeeSummary] = useState<OeeSummary | null>(null);
+  const [contributionSummary, setContributionSummary] = useState<ColumnContribution[]>([]);
+  const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
+  const [advancedInsights, setAdvancedInsights] = useState("");
   const [report, setReport] = useState<string>("");
   const [actionPlan, setActionPlan] = useState<string[]>([]);
   const [analysisResultId, setAnalysisResultId] = useState<string>("");
@@ -58,6 +91,10 @@ export default function FileUpload() {
     }
 
     setSummary(null);
+    setOeeSummary(null);
+    setContributionSummary([]);
+    setAnomalies([]);
+    setAdvancedInsights("");
     setReport("");
     setActionPlan([]);
     setAnalysisResultId("");
@@ -107,6 +144,10 @@ export default function FileUpload() {
         success?: boolean;
         error?: string;
         summary?: OptimizationSummary;
+        oeeSummary?: OeeSummary;
+        contributionSummary?: ColumnContribution[];
+        anomalies?: AnomalyItem[];
+        advancedInsights?: string;
         report?: string;
         actionPlan?: string[];
         analysisResultId?: string | null;
@@ -119,6 +160,10 @@ export default function FileUpload() {
 
       console.log("[Optimization Summary]", analyzePayload.summary);
       setSummary(analyzePayload.summary ?? null);
+      setOeeSummary(analyzePayload.oeeSummary ?? null);
+      setContributionSummary(Array.isArray(analyzePayload.contributionSummary) ? analyzePayload.contributionSummary : []);
+      setAnomalies(Array.isArray(analyzePayload.anomalies) ? analyzePayload.anomalies : []);
+      setAdvancedInsights(analyzePayload.advancedInsights ?? "");
       setReport(analyzePayload.report ?? "");
       setActionPlan(Array.isArray(analyzePayload.actionPlan) ? analyzePayload.actionPlan : []);
       setAnalysisResultId(analyzePayload.analysisResultId ?? "");
@@ -169,7 +214,7 @@ export default function FileUpload() {
   };
 
   return (
-    <section className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-glow backdrop-blur">
+    <section className="w-full rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-glow backdrop-blur">
       <div className="mb-5">
         <h2 className="text-2xl font-bold text-slate-900">CSV Yukleme Modulu</h2>
         <p className="mt-2 text-sm text-slate-600">
@@ -261,6 +306,43 @@ export default function FileUpload() {
             <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
               Yontem: {summary.optimizationMethod}
             </p>
+
+            {oeeSummary ? (
+              <div className="grid gap-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <article className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs font-medium text-amber-700">OEE Once</p>
+                    <p className="mt-1 text-lg font-bold text-amber-900">{(oeeSummary.oeeBefore * 100).toFixed(2)}%</p>
+                  </article>
+                  <article className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="text-xs font-medium text-emerald-700">OEE Sonra</p>
+                    <p className="mt-1 text-lg font-bold text-emerald-900">{(oeeSummary.oeeAfter * 100).toFixed(2)}%</p>
+                  </article>
+                  <article className="rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                    <p className="text-xs font-medium text-cyan-700">OEE Artis</p>
+                    <p className="mt-1 text-lg font-bold text-cyan-900">{(oeeSummary.oeeGain * 100).toFixed(2)} puan</p>
+                  </article>
+                </div>
+
+                <OeeChart oeeSummary={oeeSummary} />
+              </div>
+            ) : null}
+
+            {contributionSummary.length > 0 || anomalies.length > 0 ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+                <ContributionChart data={contributionSummary} />
+                <AnomalyTable anomalies={anomalies} />
+              </div>
+            ) : null}
+
+            {advancedInsights ? (
+              <article className="rounded-2xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-violet-700">AI Uzman Icgorusu (Ek Adim)</p>
+                <div className="prose prose-slate max-w-none prose-headings:text-violet-900 prose-strong:text-violet-900">
+                  <ReactMarkdown>{advancedInsights}</ReactMarkdown>
+                </div>
+              </article>
+            ) : null}
 
             {report ? (
               <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

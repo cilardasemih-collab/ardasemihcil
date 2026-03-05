@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateOeeActionPlan } from "@/lib/ai/generateActionPlan";
+import { generateAdvancedInsights } from "@/lib/ai/generateAdvancedInsights";
 import { generateEngineeringReport } from "@/lib/ai/generateEngineeringReport";
 import { generateGeminiText } from "@/lib/ai/geminiClient";
 import {
+  buildOeeSummary,
+  buildColumnContributions,
   buildOptimizationSummary,
+  detectTopAnomalies,
   parseFullCsvContent,
   type AiDiagnosis,
   type ParsedCsvData,
@@ -127,11 +131,25 @@ export async function POST(request: NextRequest) {
     const preview = buildPreviewFromFullRows(parsedCsv);
     const aiResult = await callGeminiForDiagnosis(preview);
     const summary = buildOptimizationSummary(parsedCsv, aiResult);
+    const oeeSummary = buildOeeSummary(parsedCsv, summary);
+    const contributionSummary = buildColumnContributions(parsedCsv, aiResult, 8);
+    const anomalies = detectTopAnomalies(parsedCsv, 6);
     const report = await generateEngineeringReport(summary, { timeoutMs: 45000 });
     const actionPlan = await generateOeeActionPlan(
       { optimizationMethod: summary.optimizationMethod },
       { timeoutMs: 30000 }
     );
+    let advancedInsights = "";
+    try {
+      advancedInsights = await generateAdvancedInsights({
+        summary,
+        oeeSummary,
+        contributions: contributionSummary,
+        anomalies,
+      });
+    } catch {
+      advancedInsights = "### Uzman Notu\nEk AI icgoru bu calistirmada uretilemedi. Mevcut rapor ve metrikler gecerlidir.";
+    }
 
     let analysisResultId: string | null = null;
     let saveMessage: string | null = null;
@@ -163,8 +181,12 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         summary,
+        oeeSummary,
+        contributionSummary,
+        anomalies,
         report,
         actionPlan,
+        advancedInsights,
         analysisResultId,
         saveMessage,
       },
