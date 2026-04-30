@@ -122,6 +122,10 @@ export default function DesignBuilderOptimization() {
   const [processing, setProcessing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiReport, setAiReport] = useState("");
+  const [aiActionPlan, setAiActionPlan] = useState<string[]>([]);
 
   const [qrLabel, setQrLabel] = useState("");
   const [qrValue, setQrValue] = useState("");
@@ -291,6 +295,69 @@ export default function DesignBuilderOptimization() {
       pdf.save(`designbuilder-rapor-${new Date().toISOString().slice(0, 10)}.pdf`);
     } finally {
       setIsExportingPdf(false);
+    }
+  };
+
+  const generateAiInsights = async () => {
+    if (!winner || ranking.length === 0) return;
+
+    const worstHvac = Math.max(...ranking.map((item) => item.hvacTotal));
+    const saved = Math.max(0, worstHvac - winner.hvacTotal);
+
+    setIsAiLoading(true);
+    setAiError("");
+    setAiReport("");
+    setAiActionPlan([]);
+
+    try {
+      const [reportRes, actionRes] = await Promise.all([
+        fetch("/api/generate-report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            summary: {
+              rowCount: winner.months.length,
+              oldTotalEnergy: worstHvac,
+              newTotalEnergy: winner.hvacTotal,
+              energySaved: saved,
+              optimizationMethod: `DesignBuilder U-value karsilastirma (en iyi U: ${winner.uValue ?? "bilinmiyor"})`,
+            },
+          }),
+        }),
+        fetch("/api/generate-action-plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            optimizationMethod: `DesignBuilder karsilastirma kazanan dosya: ${winner.fileName}`,
+          }),
+        }),
+      ]);
+
+      const reportPayload = (await reportRes.json().catch(() => ({}))) as {
+        success?: boolean;
+        report?: string;
+        error?: string;
+      };
+      const actionPayload = (await actionRes.json().catch(() => ({}))) as {
+        success?: boolean;
+        actionPlan?: string[];
+        error?: string;
+      };
+
+      if (!reportRes.ok || !reportPayload.success) {
+        throw new Error(reportPayload.error ?? "AI rapor olusturulamadi.");
+      }
+
+      if (!actionRes.ok || !actionPayload.success) {
+        throw new Error(actionPayload.error ?? "AI aksiyon plani olusturulamadi.");
+      }
+
+      setAiReport(String(reportPayload.report ?? ""));
+      setAiActionPlan(Array.isArray(actionPayload.actionPlan) ? actionPayload.actionPlan : []);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "AI analizinde beklenmeyen hata.");
+    } finally {
+      setIsAiLoading(false);
     }
   };
 
@@ -499,6 +566,40 @@ export default function DesignBuilderOptimization() {
                 </tbody>
               </table>
             </div>
+
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={generateAiInsights}
+                disabled={isAiLoading}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-3 text-xs font-black text-white disabled:opacity-60"
+              >
+                {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <BarChart3 size={14} />}
+                AI Karsilastirma Raporu Uret
+              </button>
+            </div>
+
+            {aiError ? (
+              <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{aiError}</p>
+            ) : null}
+
+            {aiReport ? (
+              <article className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-700">AI Muhendislik Yorumu</p>
+                <pre className="whitespace-pre-wrap text-sm text-violet-900">{aiReport}</pre>
+              </article>
+            ) : null}
+
+            {aiActionPlan.length > 0 ? (
+              <article className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                <p className="mb-2 text-sm font-bold text-sky-800">AI Aksiyon Plani</p>
+                <ul className="list-disc space-y-1 pl-5 text-sm text-sky-900">
+                  {aiActionPlan.map((item, index) => (
+                    <li key={`${index}-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+            ) : null}
           </div>
         )}
       </section>
