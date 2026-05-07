@@ -20,7 +20,9 @@ import {
   type Project,
   type ProjectInsert,
   type Scenario,
+  type SimulationDataInsert,
 } from "@/lib/designbuilder/workspaceTypes";
+import { buildScenarioSummary } from "@/services/designbuilderScenarioSummary";
 import type { OptimizationComparisonResult } from "@/services/optimizationService";
 import type { ReportSectionRecord } from "@/types/report";
 
@@ -97,6 +99,7 @@ export default function DesignBuilderWorkspace() {
   const [optimizationResult, setOptimizationResult] = useState<OptimizationComparisonResult | null>(null);
   const [optimizationError, setOptimizationError] = useState("");
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [scenarioRowsById, setScenarioRowsById] = useState<Record<string, SimulationDataInsert[]>>({});
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -204,6 +207,7 @@ export default function DesignBuilderWorkspace() {
       };
 
       setScenarios((prev) => [createdScenario, ...prev]);
+      setScenarioRowsById((prev) => ({ ...prev, [scenarioId]: result.rows }));
       setPreviewRows(result.previewRows);
       setWarnings(result.warnings);
       setRowCount(result.rowCount);
@@ -413,12 +417,51 @@ export default function DesignBuilderWorkspace() {
     setIsOptimizing(true);
 
     try {
+      const localPayloads = selectedOptimizationIds
+        .map((scenarioId) => {
+          const scenario = scenarios.find((item) => item.id === scenarioId);
+          const project = projects.find((item) => item.id === scenario?.project_id);
+          const rows = scenarioRowsById[scenarioId];
+          if (!scenario || !project || !rows || rows.length === 0) {
+            return null;
+          }
+
+          return {
+            summary: buildScenarioSummary({
+              scenario: {
+                id: scenario.id,
+                projectId: scenario.project_id,
+                name: scenario.name,
+                totalEnergyConsumption: scenario.total_energy_consumption,
+                uValues: scenario.u_values ?? {},
+                projectName: project.name,
+                location: project.location ?? null,
+              },
+              rows: rows.map((row, index) => ({
+                id: `${scenario.id}-${index}`,
+                ...row,
+                timestamp: row.timestamp instanceof Date ? row.timestamp : new Date(row.timestamp),
+              })),
+            }),
+            costEstimate: scenario.cost_estimate,
+          };
+        })
+        .filter(
+          (
+            item
+          ): item is {
+            summary: ReturnType<typeof buildScenarioSummary>;
+            costEstimate: number | null;
+          } => item !== null
+        );
+
       const response = await fetch("/api/optimize-scenarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scenarioIds: selectedOptimizationIds,
           language: analysisLanguage,
+          scenarioPayloads: localPayloads,
         }),
       });
 

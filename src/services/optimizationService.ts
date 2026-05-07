@@ -210,20 +210,38 @@ export async function buildOptimizationDecision(input: {
   const scenarios = aggregateScenarioOptimization(input);
   const winner = scenarios[0];
   const latexTable = buildLatexTable(scenarios);
+  const fallbackSummary =
+    input.language === "tr"
+      ? [
+          `${winner.scenarioName} en yuksek toplam verimlilik skorunu aldi (${winner.finalScore}).`,
+          `Yillik enerji tuketimi ${winner.annualEnergyKwh} kWh, karbon etkisi ${winner.annualCarbonKg} kgCO2/yil seviyesinde.`,
+          `Karar; ROI, enerji yogunlugu, konfor ve karbon agirliklarinin birlikte degerlendirilmesine dayaniyor.`,
+        ].join(" ")
+      : [
+          `${winner.scenarioName} achieved the highest combined efficiency score (${winner.finalScore}).`,
+          `Its annual energy use is ${winner.annualEnergyKwh} kWh and annual carbon impact is ${winner.annualCarbonKg} kgCO2/year.`,
+          "The decision is based on the combined weighting of ROI, energy intensity, comfort, and carbon metrics.",
+        ].join(" ");
 
-  const strategist = await generateLlmText({
-    systemPrompt: STRATEGIST_SYSTEM_PROMPT,
-    userPrompt: buildStrategistPrompt(scenarios, latexTable, input.language),
-    temperature: 0.2,
-    maxOutputTokens: 1800,
-    timeoutMs: 45000,
-  });
+  let strategistSummary = fallbackSummary;
+  try {
+    const strategist = await generateLlmText({
+      systemPrompt: STRATEGIST_SYSTEM_PROMPT,
+      userPrompt: buildStrategistPrompt(scenarios, latexTable, input.language),
+      temperature: 0.2,
+      maxOutputTokens: 1800,
+      timeoutMs: 45000,
+    });
+    strategistSummary = strategist.text.trim() || fallbackSummary;
+  } catch {
+    strategistSummary = fallbackSummary;
+  }
 
   return {
     baselineScenarioId: scenarios[scenarios.length - 1].scenarioId,
     winner,
     scenarios,
     latexTable,
-    strategistSummary: strategist.text.trim(),
+    strategistSummary,
   };
 }

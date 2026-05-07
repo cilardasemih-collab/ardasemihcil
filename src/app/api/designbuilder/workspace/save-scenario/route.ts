@@ -15,6 +15,23 @@ const saveScenarioBodySchema = projectSchema.extend({
   rows: simulationDataInsertSchema.array(),
 });
 
+const formatInfraError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : "Scenario kaydi sirasinda beklenmeyen hata.";
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("relation") ||
+    normalized.includes("does not exist") ||
+    normalized.includes("schema cache") ||
+    normalized.includes("service role") ||
+    normalized.includes("supabase")
+  ) {
+    return "Supabase tabloları henuz hazir degil. Senaryo yerel olarak tutuldu; veritabani senkronu migration push sonrasi aktif olacak.";
+  }
+
+  return message;
+};
+
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.json().catch(() => ({}));
@@ -73,7 +90,10 @@ export async function POST(request: NextRequest) {
       rowCount: rows.length,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Scenario kaydi sirasinda beklenmeyen hata.";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({
+      success: false,
+      persisted: false,
+      error: formatInfraError(error),
+    });
   }
 }
