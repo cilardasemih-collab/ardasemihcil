@@ -1,5 +1,40 @@
 import { z } from "zod";
 
+const parseFlexibleDate = (value: unknown) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value === "number") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value !== "string") return null;
+
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const nativeParsed = new Date(raw);
+  if (!Number.isNaN(nativeParsed.getTime())) {
+    return nativeParsed;
+  }
+
+  const normalized = raw.replace(/\//g, ".").replace("T", " ");
+  const match = normalized.match(
+    /^(\d{1,2})[.\-](\d{1,2})[.\-](\d{2,4})(?:\s+(\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?)?$/
+  );
+
+  if (!match) return null;
+
+  const [, dayStr, monthStr, yearStr, hourStr = "0", minuteStr = "0", secondStr = "0"] = match;
+  const year = yearStr.length === 2 ? Number(`20${yearStr}`) : Number(yearStr);
+  const month = Number(monthStr) - 1;
+  const day = Number(dayStr);
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  const second = Number(secondStr);
+
+  const parsed = new Date(year, month, day, hour, minute, second);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const nullableNumber = z.preprocess((value) => {
   if (value === "" || value === null || value === undefined) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -12,12 +47,8 @@ const nullableNumber = z.preprocess((value) => {
 }, z.number().nullable());
 
 const nullableDate = z.preprocess((value) => {
-  if (value instanceof Date) return value;
-  if (typeof value === "string" || typeof value === "number") {
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-  }
-  return value;
+  const parsed = parseFlexibleDate(value);
+  return parsed ?? value;
 }, z.date());
 
 export const projectSchema = z.object({

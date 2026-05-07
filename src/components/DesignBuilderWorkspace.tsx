@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import { Bot, Database, FileSpreadsheet, FileText, FolderKanban, Loader2, UploadCloud } from "lucide-react";
+import { Bot, Database, FileSpreadsheet, FileText, FolderKanban, Loader2, Trash2, UploadCloud } from "lucide-react";
 
 import AiStatusTerminal from "@/components/AiStatusTerminal";
 import OptimizationDashboard from "@/components/OptimizationDashboard";
@@ -63,8 +63,34 @@ type TerminalTrace = {
   message: string;
 };
 
+const STORAGE_KEYS = {
+  projects: "designbuilder-workspace-projects",
+  scenarios: "designbuilder-workspace-scenarios",
+  synced: "designbuilder-workspace-synced-scenarios",
+  rows: "designbuilder-workspace-scenario-rows",
+  selectedProjectId: "designbuilder-workspace-selected-project",
+} as const;
+
 const numberFmt = (value: number | null | undefined, maximumFractionDigits = 2) =>
   value === null || value === undefined ? "-" : new Intl.NumberFormat("tr-TR", { maximumFractionDigits }).format(value);
+
+const normalizeRemoteError = (message: string) => {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("521") || normalized.includes("web server is down") || normalized.includes("<!doctype html")) {
+    return "Supabase gecici olarak erisilemiyor. Senaryo yerel olarak saklandi; servis tekrar geldiginde yeniden senkronlayabiliriz.";
+  }
+  return message;
+};
+
+const readStorage = <T,>(key: string, fallback: T): T => {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
 
 export default function DesignBuilderWorkspace() {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -100,6 +126,7 @@ export default function DesignBuilderWorkspace() {
   const [optimizationError, setOptimizationError] = useState("");
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [scenarioRowsById, setScenarioRowsById] = useState<Record<string, SimulationDataInsert[]>>({});
+  const [isStorageReady, setIsStorageReady] = useState(false);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
@@ -114,6 +141,94 @@ export default function DesignBuilderWorkspace() {
   useEffect(() => {
     setSelectedOptimizationIds((prev) => prev.filter((id) => projectScenarios.some((scenario) => scenario.id === id)));
   }, [projectScenarios]);
+
+  useEffect(() => {
+    const storedProjects = readStorage<Array<Omit<Project, "created_at"> & { created_at: string }>>(STORAGE_KEYS.projects, []);
+    const storedScenarios = readStorage<Array<Omit<Scenario, "created_at"> & { created_at: string }>>(STORAGE_KEYS.scenarios, []);
+    const storedRows = readStorage<Record<string, Array<Omit<SimulationDataInsert, "timestamp"> & { timestamp: string }>>>(
+      STORAGE_KEYS.rows,
+      {}
+    );
+    const storedSynced = readStorage<Record<string, boolean>>(STORAGE_KEYS.synced, {});
+    const storedSelectedProjectId = readStorage<string>(STORAGE_KEYS.selectedProjectId, seedProjects[0]?.id ?? "");
+
+    if (storedProjects.length > 0) {
+      setProjects(storedProjects.map((project) => ({ ...project, created_at: new Date(project.created_at) })));
+    }
+    if (storedScenarios.length > 0) {
+      setScenarios(storedScenarios.map((scenario) => ({ ...scenario, created_at: new Date(scenario.created_at) })));
+    }
+    if (Object.keys(storedRows).length > 0) {
+      setScenarioRowsById(
+        Object.fromEntries(
+          Object.entries(storedRows).map(([scenarioId, rows]) => [
+            scenarioId,
+            rows.map((row) => ({
+              ...row,
+              timestamp: new Date(row.timestamp),
+            })),
+          ])
+        )
+      );
+    }
+    if (Object.keys(storedSynced).length > 0) {
+      setSyncedScenarioIds(storedSynced);
+    }
+    if (storedSelectedProjectId) {
+      setSelectedProjectId(storedSelectedProjectId);
+    }
+    setIsStorageReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isStorageReady || typeof window === "undefined") return;
+    window.localStorage.setItem(
+      STORAGE_KEYS.projects,
+      JSON.stringify(projects.map((project) => ({ ...project, created_at: project.created_at.toISOString() })))
+    );
+  }, [isStorageReady, projects]);
+
+  useEffect(() => {
+    if (!isStorageReady || typeof window === "undefined") return;
+    window.localStorage.setItem(
+      STORAGE_KEYS.scenarios,
+      JSON.stringify(scenarios.map((scenario) => ({ ...scenario, created_at: scenario.created_at.toISOString() })))
+    );
+  }, [isStorageReady, scenarios]);
+
+  useEffect(() => {
+    if (!isStorageReady || typeof window === "undefined") return;
+    window.localStorage.setItem(
+      STORAGE_KEYS.rows,
+      JSON.stringify(
+        Object.fromEntries(
+          Object.entries(scenarioRowsById).map(([scenarioId, rows]) => [
+            scenarioId,
+            rows.map((row) => ({
+              ...row,
+              timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : String(row.timestamp),
+            })),
+          ])
+        )
+      )
+    );
+  }, [isStorageReady, scenarioRowsById]);
+
+  useEffect(() => {
+    if (!isStorageReady || typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEYS.synced, JSON.stringify(syncedScenarioIds));
+  }, [isStorageReady, syncedScenarioIds]);
+
+  useEffect(() => {
+    if (!isStorageReady || typeof window === "undefined") return;
+    window.localStorage.setItem(STORAGE_KEYS.selectedProjectId, JSON.stringify(selectedProjectId));
+  }, [isStorageReady, selectedProjectId]);
+
+  useEffect(() => {
+    if (!projects.some((project) => project.id === selectedProjectId)) {
+      setSelectedProjectId(projects[0]?.id ?? "");
+    }
+  }, [projects, selectedProjectId]);
 
   const pollReportSections = async (reportGroupId: string) => {
     const response = await fetch(`/api/reports?reportGroupId=${encodeURIComponent(reportGroupId)}`, {
@@ -162,6 +277,32 @@ export default function DesignBuilderWorkspace() {
     setSelectedProjectId(created.id);
     setNewProjectName("");
     setNewProjectLocation("");
+  };
+
+  const removeScenario = (scenarioId: string) => {
+    setScenarios((prev) => prev.filter((scenario) => scenario.id !== scenarioId));
+    setScenarioRowsById((prev) => {
+      const next = { ...prev };
+      delete next[scenarioId];
+      return next;
+    });
+    setSyncedScenarioIds((prev) => {
+      const next = { ...prev };
+      delete next[scenarioId];
+      return next;
+    });
+    setSelectedOptimizationIds((prev) => prev.filter((id) => id !== scenarioId));
+    if (analysisScenarioId === scenarioId) {
+      setAnalysisScenarioId("");
+      setAnalysisReport("");
+      setTerminalTrace([]);
+    }
+    if (reportScenarioId === scenarioId) {
+      setReportScenarioId("");
+      setReportSections([]);
+      setActiveReportGroupId("");
+    }
+    setMessage("Senaryo yerel listeden kaldirildi.");
   };
 
   const handleFile = async (file: File) => {
@@ -228,11 +369,12 @@ export default function DesignBuilderWorkspace() {
 
         const persistPayload = (await persistResponse.json().catch(() => ({}))) as {
           success?: boolean;
+          persisted?: boolean;
           error?: string;
         };
 
         if (!persistResponse.ok || !persistPayload.success) {
-          throw new Error(persistPayload.error ?? "Scenario DB'ye yazilamadi.");
+          throw new Error(normalizeRemoteError(persistPayload.error ?? "Scenario DB'ye yazilamadi."));
         }
 
         setSyncedScenarioIds((prev) => ({ ...prev, [scenarioId]: true }));
@@ -240,8 +382,11 @@ export default function DesignBuilderWorkspace() {
       } catch (error) {
         setWarnings((prev) => [
           ...prev,
-          error instanceof Error ? `DB senkronu basarisiz: ${error.message}` : "DB senkronu basarisiz.",
+          error instanceof Error
+            ? `DB senkronu basarisiz: ${normalizeRemoteError(error.message)}`
+            : "DB senkronu basarisiz.",
         ]);
+        setMessage(`${result.rowCount} satir parse edildi. Supabase baglantisi duzelene kadar senaryo yerelde saklaniyor.`);
       }
     } catch (error) {
       setUploadState("error");
@@ -631,18 +776,50 @@ export default function DesignBuilderWorkspace() {
                 </select>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {projectScenarios.length === 0 ? (
-                  <p className="text-sm text-slate-500">Once bu projeye ait bir scenario yukle.</p>
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                    Once bu projeye ait bir scenario yukle. Yuklenen dosyalar bu panelde kalici olarak listelenir.
+                  </div>
                 ) : (
                   projectScenarios.map((scenario) => (
-                    <div key={scenario.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                      <div>
-                        <p className="text-sm font-black text-slate-900">{scenario.name}</p>
-                        <p className="text-xs text-slate-600">
-                          Enerji: {numberFmt(scenario.total_energy_consumption)} · DB: {syncedScenarioIds[scenario.id] ? "senkron" : "yerel"}
-                        </p>
-                        <label className="mt-2 inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <div
+                      key={scenario.id}
+                      className="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc,#ffffff)] p-4 shadow-sm"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-black text-slate-900">{scenario.name}</p>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] ${
+                                syncedScenarioIds[scenario.id]
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-amber-100 text-amber-700"
+                              }`}
+                            >
+                              {syncedScenarioIds[scenario.id] ? "Supabase Senkron" : "Yerel Kayit"}
+                            </span>
+                          </div>
+                          <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-3">
+                            <p>Enerji: <span className="font-bold text-slate-900">{numberFmt(scenario.total_energy_consumption)}</span></p>
+                            <p>Maliyet: <span className="font-bold text-slate-900">{numberFmt(scenario.cost_estimate)}</span></p>
+                            <p>
+                              Satir: <span className="font-bold text-slate-900">{scenarioRowsById[scenario.id]?.length ?? 0}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-9 rounded-full px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                          onClick={() => removeScenario(scenario.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Kaldir
+                        </Button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <label className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
                           <input
                             type="checkbox"
                             checked={selectedOptimizationIds.includes(scenario.id)}
@@ -650,23 +827,23 @@ export default function DesignBuilderWorkspace() {
                           />
                           Karsilastirma listesine ekle
                         </label>
+                        <Button
+                          type="button"
+                          className="bg-slate-900 hover:bg-slate-800"
+                          disabled={isAnalyzing || !syncedScenarioIds[scenario.id]}
+                          onClick={() => void analyzeScenario(scenario)}
+                        >
+                          <Bot className="mr-2 h-4 w-4" /> Analyze Scenario
+                        </Button>
+                        <Button
+                          type="button"
+                          className="bg-emerald-600 hover:bg-emerald-500"
+                          disabled={isGeneratingReport || !syncedScenarioIds[scenario.id]}
+                          onClick={() => void generateReport(scenario)}
+                        >
+                          <FileText className="mr-2 h-4 w-4" /> Generate Report
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        className="bg-slate-900 hover:bg-slate-800"
-                        disabled={isAnalyzing || !syncedScenarioIds[scenario.id]}
-                        onClick={() => void analyzeScenario(scenario)}
-                      >
-                        <Bot className="mr-2 h-4 w-4" /> Analyze Scenario
-                      </Button>
-                      <Button
-                        type="button"
-                        className="bg-emerald-600 hover:bg-emerald-500"
-                        disabled={isGeneratingReport || !syncedScenarioIds[scenario.id]}
-                        onClick={() => void generateReport(scenario)}
-                      >
-                        <FileText className="mr-2 h-4 w-4" /> Generate Report
-                      </Button>
                     </div>
                   ))
                 )}
