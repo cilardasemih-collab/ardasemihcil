@@ -29,16 +29,44 @@ export type OptimizationScenarioDossier = {
   explanation: string[];
 };
 
+export type CurrencyConfig = {
+  code: "USD" | "TRY" | "EUR";
+  symbol: string;
+  electricityRatePerKwh: number;
+  carbonCostPerKg: number;
+};
+
+export const CURRENCY_PRESETS: Record<string, CurrencyConfig> = {
+  USD: {
+    code: "USD",
+    symbol: "$",
+    electricityRatePerKwh: 0.12,
+    carbonCostPerKg: 0.025,
+  },
+  TRY: {
+    code: "TRY",
+    symbol: "₺",
+    electricityRatePerKwh: 2.85,
+    carbonCostPerKg: 0.75,
+  },
+  EUR: {
+    code: "EUR",
+    symbol: "€",
+    electricityRatePerKwh: 0.18,
+    carbonCostPerKg: 0.035,
+  },
+};
+
 export type OptimizationComparisonResult = {
   baselineScenarioId: string;
   winner: OptimizationScenarioDossier;
   scenarios: OptimizationScenarioDossier[];
   latexTable: string;
   strategistSummary: string;
+  currency: CurrencyConfig;
 };
 
 const CARBON_FACTOR_KG_PER_KWH = 0.42;
-const ELECTRICITY_COST_PER_KWH = 0.12;
 
 const round = (value: number, digits = 3) => Number(value.toFixed(digits));
 
@@ -110,13 +138,17 @@ export function aggregateScenarioOptimization(input: {
     summary: ScenarioSummaryPayload;
     costEstimate: number | null;
   }>;
+  currency?: CurrencyConfig;
 }) {
   if (input.scenarios.length < 2) {
     throw new Error("Karsilastirma icin en az iki scenario gerekli.");
   }
 
+  const currency = input.currency ?? CURRENCY_PRESETS.TRY;
+
+  // Baseline'ı CAPEX'in en düşük olduğu senaryo olarak seç (daha ekonomik başlangıç)
   const baseline = [...input.scenarios].sort(
-    (a, b) => (b.summary.scenario.totalEnergyConsumption ?? 0) - (a.summary.scenario.totalEnergyConsumption ?? 0)
+    (a, b) => (a.costEstimate ?? 0) - (b.costEstimate ?? 0)
   )[0];
 
   const floorAreas = input.scenarios
@@ -132,12 +164,18 @@ export function aggregateScenarioOptimization(input: {
   const raw = input.scenarios.map(({ summary, costEstimate }) => {
     const annualEnergyKwh = summary.scenario.totalEnergyConsumption ?? (summary.summary.metrics.heatingLoad.sum ?? 0) + (summary.summary.metrics.coolingLoad.sum ?? 0);
     const annualCarbonKg = annualEnergyKwh * CARBON_FACTOR_KG_PER_KWH;
-    const annualOpexEstimate = annualEnergyKwh * ELECTRICITY_COST_PER_KWH;
+    const annualCarbonCost = annualCarbonKg * currency.carbonCostPerKg;
+    const annualOpexEstimate = (annualEnergyKwh * currency.electricityRatePerKwh) + annualCarbonCost;
     const capex = costEstimate ?? 0;
+    
     const baselineEnergy = baseline.summary.scenario.totalEnergyConsumption ?? annualEnergyKwh;
-    const deltaCapex = Math.max(0, capex - (baseline.costEstimate ?? 0));
-    const deltaOpex = Math.max(annualOpexEstimate, (baselineEnergy - annualEnergyKwh) * ELECTRICITY_COST_PER_KWH);
-    const roiYears = deltaOpex > 0 ? deltaCapex / deltaOpex : null;
+    const baselineCapex = baseline.costEstimate ?? 0;
+    const baselineOpex = (baselineEnergy * currency.electricityRatePerKwh) + (baselineEnergy * CARBON_FACTOR_KG_PER_KWH * currency.carbonCostPerKg);
+    
+    const deltaCapex = capex - baselineCapex;
+    const deltaOpex = annualOpexEstimate - baselineOpex;
+    const roiYears = deltaCapex > 0 && deltaOpex > 0 ? round(deltaCapex / deltaOpex, 2) : (deltaCapex <= 0 ? 0 : null);
+    
     const comfortPenalty = computeComfortPenalty(summary.summary);
     const comfortScore = Math.max(0, round(100 - comfortPenalty, 2));
     const energyIntensity = fallbackArea && fallbackArea > 0 ? annualEnergyKwh / fallbackArea : null;
@@ -153,7 +191,7 @@ export function aggregateScenarioOptimization(input: {
       annualCarbonKg: round(annualCarbonKg),
       annualOpexEstimate: round(annualOpexEstimate),
       capex: round(capex),
-      roiYears: roiYears !== null && Number.isFinite(roiYears) ? round(roiYears) : null,
+      roiYears,
       energyIntensity: energyIntensity !== null && Number.isFinite(energyIntensity) ? round(energyIntensity) : null,
       comfortScore,
       carbonScore: 0,
@@ -168,23 +206,24 @@ export function aggregateScenarioOptimization(input: {
 
   const minCarbon = Math.min(...raw.map((item) => item.annualCarbonKg));
   const maxCarbon = Math.max(...raw.map((item) => item.annualCarbonKg));
-  const roiValues = raw.map((item) => item.roiYears ?? 99);
-  const minRoi = Math.min(...roiValues);
-  const maxRoi = Math.max(...roiValues);
+  const minRoi = Math.min(...raw.map((item) => item.roiYears ?? 99));
+  const maxRoi = Math.max(...raw.map((item) => item.roiYears ?? 99));
   const intensityValues = raw.map((item) => item.energyIntensity ?? Math.max(...raw.map((x) => x.annualEnergyKwh)));
   const minIntensity = Math.min(...intensityValues);
   const maxIntensity = Math.max(...intensityValues);
 
   const dossiers = raw.map((item) => {
     const carbonScore = normalizeInverse(item.annualCarbonKg, minCarbon, maxCarbon);
-    const roiScore = normalizeInverse(item.roiYears ?? maxRoi, minRoi, maxRoi);
-    const intensityScore = normalizeInverse(item.energyIntensity ?? maxIntensity, minIntensity, maxIntensity);
-    const finalScore = round(roiScore * 0.28 + intensityScore * 0.24 + item.comfortScore * 0.24 + carbonScore * 0.24, 3);
+    const roiScore = item.roiYears !== null ? normalizeInverse(item.roiYears, minRoi, maxRoi) : 50;
+    const intensityScore = item.energyIntensity !== null ? normalizeInverse(item.energyIntensity, minIntensity, maxIntensity) : 50;
+    // Ağırlıklandırılmış skor: ROI 35%, Enerji Yoğunluğu 25%, Konfor 20%, Karbon 20%
+    const finalScore = round(roiScore * 0.35 + intensityScore * 0.25 + item.comfortScore * 0.2 + carbonScore * 0.2, 3);
     const explanation = [
-      `ROI: ${item.roiYears !== null ? item.roiYears : "-"} yil`,
-      `Enerji Yogunlugu: ${item.energyIntensity !== null ? item.energyIntensity : "-"} kWh/m^2`,
+      `ROI: ${item.roiYears !== null ? (item.roiYears === 0 ? "Hemen (negatif capex)" : `${item.roiYears} yıl`) : "N/A"}`,
+      `Enerji Yoğunluğu: ${item.energyIntensity !== null ? item.energyIntensity : "-"} kWh/m²`,
       `Konfor Skoru: ${item.comfortScore}/100`,
-      `Karbon: ${item.annualCarbonKg} kgCO2/yil`,
+      `Karbon: ${item.annualCarbonKg} kgCO₂/yıl`,
+      `Yıllık Maliyet (${currency.code}): ${currency.symbol}${item.annualOpexEstimate}`,
     ];
     return {
       ...item,
@@ -192,7 +231,7 @@ export function aggregateScenarioOptimization(input: {
       roiScore,
       intensityScore,
       finalScore,
-      latexTableRow: `${item.scenarioName} & ${item.annualEnergyKwh} & ${item.capex} & ${item.annualCarbonKg} & ${item.roiYears ?? "-"} & ${item.comfortScore} & ${finalScore} \\\\`,
+      latexTableRow: `${item.scenarioName} & ${item.annualEnergyKwh} & ${currency.symbol}${item.capex} & ${item.annualCarbonKg} & ${item.roiYears ?? "-"} & ${item.comfortScore} & ${finalScore} \\\\`,
       explanation,
     };
   });
@@ -206,21 +245,25 @@ export async function buildOptimizationDecision(input: {
     costEstimate: number | null;
   }>;
   language: "tr" | "en";
-}) : Promise<OptimizationComparisonResult> {
-  const scenarios = aggregateScenarioOptimization(input);
+  currency?: CurrencyConfig;
+}): Promise<OptimizationComparisonResult> {
+  const currency = input.currency ?? CURRENCY_PRESETS.TRY;
+  const scenarios = aggregateScenarioOptimization({ scenarios: input.scenarios, currency });
   const winner = scenarios[0];
   const latexTable = buildLatexTable(scenarios);
   const fallbackSummary =
     input.language === "tr"
       ? [
           `${winner.scenarioName} en yuksek toplam verimlilik skorunu aldi (${winner.finalScore}).`,
-          `Yillik enerji tuketimi ${winner.annualEnergyKwh} kWh, karbon etkisi ${winner.annualCarbonKg} kgCO2/yil seviyesinde.`,
-          `Karar; ROI, enerji yogunlugu, konfor ve karbon agirliklarinin birlikte degerlendirilmesine dayaniyor.`,
+          `Yillik enerji tuketimi ${winner.annualEnergyKwh} kWh, karbon etkisi ${winner.annualCarbonKg} kgCO2/yil.`,
+          `Yillik isletme maliyeti ${currency.symbol}${winner.annualOpexEstimate} (${currency.code}), ${winner.roiYears ? `kapital geri donusum suresi ${winner.roiYears} yil` : "hemen kari"}.`,
+          `Karar: ROI (%35), enerji yogunlugu (%25), konfor (%20) ve karbon (%20) oranlarinda degerlendirilmistir.`,
         ].join(" ")
       : [
           `${winner.scenarioName} achieved the highest combined efficiency score (${winner.finalScore}).`,
           `Its annual energy use is ${winner.annualEnergyKwh} kWh and annual carbon impact is ${winner.annualCarbonKg} kgCO2/year.`,
-          "The decision is based on the combined weighting of ROI, energy intensity, comfort, and carbon metrics.",
+          `Annual operating cost is ${currency.symbol}${winner.annualOpexEstimate} (${currency.code}), with a payback period of ${winner.roiYears ? `${winner.roiYears} years` : "immediate payback"}.`,
+          "The decision is based on weighted scoring: ROI (35%), energy intensity (25%), comfort (20%), and carbon (20%).",
         ].join(" ");
 
   let strategistSummary = fallbackSummary;
@@ -243,5 +286,6 @@ export async function buildOptimizationDecision(input: {
     scenarios,
     latexTable,
     strategistSummary,
+    currency,
   };
 }

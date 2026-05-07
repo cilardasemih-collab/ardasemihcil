@@ -244,7 +244,16 @@ export default function DesignBuilderWorkspace() {
       throw new Error(payload.error ?? "Rapor durumlari okunamadi.");
     }
 
-    setReportSections(Array.isArray(payload.sections) ? payload.sections : []);
+    const sections = Array.isArray(payload.sections) ? payload.sections : [];
+    setReportSections(sections);
+
+    // Tüm sections completed veya failed olunca, generating'i durdur
+    if (sections.length > 0) {
+      const allFinished = sections.every((s) => s.status === "completed" || s.status === "failed");
+      if (allFinished) {
+        setIsGeneratingReport(false);
+      }
+    }
   };
 
   useEffect(() => {
@@ -254,7 +263,7 @@ export default function DesignBuilderWorkspace() {
       void pollReportSections(activeReportGroupId).catch((error) => {
         setReportError(error instanceof Error ? error.message : "Rapor durumu okunamadi.");
       });
-    }, 2000);
+    }, 1000); // Arttırıldı poll hızı: 2s -> 1s
 
     return () => window.clearInterval(interval);
   }, [activeReportGroupId, isGeneratingReport]);
@@ -484,6 +493,7 @@ export default function DesignBuilderWorkspace() {
         success?: boolean;
         error?: string;
         reportTitle?: string;
+        status?: string;
       };
 
       if (!response.ok || !payload.success) {
@@ -491,12 +501,12 @@ export default function DesignBuilderWorkspace() {
       }
 
       setActiveReportTitle(payload.reportTitle ?? activeReportTitle);
+      // Ilk poll için sections'ı getir
       await pollReportSections(reportGroupId);
+      // isGeneratingReport polling loop tarafından kontrol edilecek
     } catch (error) {
       setReportError(error instanceof Error ? error.message : "Rapor olusturulamadi.");
-    } finally {
       setIsGeneratingReport(false);
-      await pollReportSections(reportGroupId).catch(() => undefined);
     }
   };
 
@@ -552,6 +562,19 @@ export default function DesignBuilderWorkspace() {
   };
 
   const runOptimization = async () => {
+    // Check report completion first
+    if (reportSections.length > 0) {
+      const pendingSections = reportSections.filter(
+        (section) => section.status === "pending" || section.status === "generating"
+      );
+      if (pendingSections.length > 0) {
+        setOptimizationError(
+          `Raporun tamamlanmasını bekleyin. ${pendingSections.length}/${reportSections.length} bölüm hala işleniyor.`
+        );
+        return;
+      }
+    }
+
     if (selectedOptimizationIds.length < 2) {
       setOptimizationError("Karsilastirma icin en az iki scenario sec.");
       return;
@@ -618,9 +641,10 @@ export default function DesignBuilderWorkspace() {
         latexTable?: string;
         strategistSummary?: string;
         baselineScenarioId?: string;
+        currency?: OptimizationComparisonResult["currency"];
       };
 
-      if (!response.ok || !payload.success || !payload.winner || !payload.scenarios || !payload.latexTable || !payload.strategistSummary || !payload.baselineScenarioId) {
+      if (!response.ok || !payload.success || !payload.winner || !payload.scenarios || !payload.latexTable || !payload.strategistSummary || !payload.baselineScenarioId || !payload.currency) {
         throw new Error(payload.error ?? "Optimization sonucu uretilemedi.");
       }
 
@@ -630,6 +654,7 @@ export default function DesignBuilderWorkspace() {
         latexTable: payload.latexTable,
         strategistSummary: payload.strategistSummary,
         baselineScenarioId: payload.baselineScenarioId,
+        currency: payload.currency,
       });
     } catch (error) {
       setOptimizationError(error instanceof Error ? error.message : "Optimization sonucu uretilemedi.");
@@ -859,7 +884,7 @@ export default function DesignBuilderWorkspace() {
                   <Button
                     type="button"
                     className="bg-violet-600 hover:bg-violet-500"
-                    disabled={isOptimizing || selectedOptimizationIds.length < 2}
+                    disabled={isOptimizing || selectedOptimizationIds.length < 2 || reportSections.some((s) => s.status === "pending" || s.status === "generating")}
                     onClick={() => void runOptimization()}
                   >
                     {isOptimizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}

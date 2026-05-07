@@ -19,7 +19,7 @@ export default function ContributionChart({ data }: Props) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Kolon Bazli Tasarruf Katkisi</p>
-      <div className="h-72 w-full">
+      <div style={{ width: "100%", height: 288, minHeight: 280 }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} layout="vertical" margin={{ top: 8, right: 12, left: 12, bottom: 8 }}>
             <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />

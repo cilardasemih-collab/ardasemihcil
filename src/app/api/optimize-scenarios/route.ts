@@ -142,6 +142,7 @@ export async function POST(request: NextRequest) {
       latexTable: result.latexTable,
       strategistSummary: result.strategistSummary,
       baselineScenarioId: result.baselineScenarioId,
+      currency: result.currency,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Optimization karsilastirmasi sirasinda hata olustu.";

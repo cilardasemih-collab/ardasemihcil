@@ -386,7 +386,7 @@ export async function generateSingleReportSection(input: {
       responseMimeType: "application/json",
       temperature: 0.2,
       maxOutputTokens: 2200,
-      timeoutMs: 45000,
+      timeoutMs: 55000, // Arttırıldı: 45s -> 55s
     });
 
     const parsed = parseSectionResponse(result.text);
@@ -396,7 +396,8 @@ export async function generateSingleReportSection(input: {
       provider: result.provider,
       model: result.model,
     };
-  } catch {
+  } catch (error) {
+    console.warn(`Section ${input.section.title} LLM generation failed, using fallback:`, error instanceof Error ? error.message : error);
     return buildFallbackSection({
       section: input.section,
       language: input.language,

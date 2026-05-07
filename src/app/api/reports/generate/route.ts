@@ -7,7 +7,7 @@ import { buildScenarioSummary } from "@/services/designbuilderScenarioSummary";
 import { generateSequentialReport, initializeReportSections } from "@/services/reportEngine";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 540; // 9 dakika - 10 bölüm × ~50 saniye per section
 
 const bodySchema = z.object({
   scenarioId: z.string().uuid(),
@@ -36,6 +36,8 @@ type SimulationRow = {
 };
 
 export async function POST(request: NextRequest) {
+  const requestStartTime = Date.now();
+  
   try {
     const body = bodySchema.parse(await request.json().catch(() => ({})));
     const supabase = createServiceClient();
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
         ? `${scenarioSummary.scenario.projectName} - DesignBuilder Teknik Raporu`
         : `${scenarioSummary.scenario.projectName} - DesignBuilder Technical Report`;
 
+    // Initialize sections (all pending initially)
     await initializeReportSections({
       reportGroupId: body.reportGroupId,
       scenarioId: body.scenarioId,
@@ -94,18 +97,23 @@ export async function POST(request: NextRequest) {
       reportTitle,
     });
 
-    const result = await generateSequentialReport({
+    // Start report generation asynchronously
+    generateSequentialReport({
       reportGroupId: body.reportGroupId,
       scenarioSummary,
       language: body.language,
+    }).catch((error) => {
+      console.error("Background report generation error:", error);
+      // Log error to database if needed
     });
 
+    // Return immediately with sections being generated in background
     return NextResponse.json({
       success: true,
       reportGroupId: body.reportGroupId,
       reportTitle,
-      provider: result.provider,
-      model: result.model,
+      status: "generating",
+      message: "Rapor bolumleri arka planda sirayla uretiliyor.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Rapor olusturma sirasinda beklenmeyen hata.";

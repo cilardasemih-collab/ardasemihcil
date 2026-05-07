@@ -277,8 +277,6 @@ export async function POST(request: NextRequest) {
       advancedInsights = "### Uzman Notu\nEk AI icgoru bu calistirmada uretilemedi. Mevcut rapor ve metrikler gecerlidir.";
     }
 
-    let analysisResultId: string | null = null;
-    let saveMessage: string | null = null;
     const analysisPayload = {
       summary,
       oeeSummary,
@@ -290,6 +288,9 @@ export async function POST(request: NextRequest) {
       advancedInsights,
       csvPreview,
     };
+
+    let analysisResultId: string | null = null;
+    let saveMessage: string | null = null;
 
     try {
       const { data: savedRow, error: saveError } = await serviceSupabase
@@ -315,23 +316,23 @@ export async function POST(request: NextRequest) {
       saveMessage = "Analiz tamamlandi ancak kayit asamasinda beklenmeyen bir hata olustu.";
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        summary,
-        oeeSummary,
-        contributionSummary,
-        anomalies,
-        csvPreview,
-        report,
-        actionPlan,
-        practiceProblems,
-        advancedInsights,
-        analysisResultId,
-        saveMessage,
-      },
-      { status: 200 }
-    );
+    // Serialization safe response - remove circular refs
+    const safeResponse = {
+      success: true,
+      summary: summary ?? {},
+      oeeSummary: oeeSummary ?? {},
+      contributionSummary: contributionSummary ?? [],
+      anomalies: anomalies ?? [],
+      csvPreview: csvPreview ?? { headers: [], rows: [], numericSummary: [] },
+      report: String(report ?? ""),
+      actionPlan: String(actionPlan ?? ""),
+      practiceProblems: String(practiceProblems ?? ""),
+      advancedInsights: String(advancedInsights ?? ""),
+      analysisResultId: analysisResultId ?? null,
+      saveMessage: saveMessage ?? null,
+    };
+
+    return NextResponse.json(safeResponse, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Beklenmeyen bir hata olustu.";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
