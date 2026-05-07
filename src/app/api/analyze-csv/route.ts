@@ -5,6 +5,7 @@ import { generateOeeActionPlan } from "@/lib/ai/generateActionPlan";
 import { generateAdvancedInsights } from "@/lib/ai/generateAdvancedInsights";
 import { generateEngineeringReport } from "@/lib/ai/generateEngineeringReport";
 import { generateGeminiText } from "@/lib/ai/geminiClient";
+import { generatePracticeProblems } from "@/lib/ai/generatePracticeProblems";
 import {
   buildOeeSummary,
   buildColumnContributions,
@@ -26,6 +27,17 @@ type AnalyzeCsvBody = {
 type CsvPreview = {
   headers: string[];
   firstFiveRows: Array<Record<string, string>>;
+};
+
+type CsvPreviewPayload = {
+  headers: string[];
+  rows: Array<Record<string, string>>;
+  numericSummary: Array<{
+    column: string;
+    avg: number;
+    min: number;
+    max: number;
+  }>;
 };
 
 const RAW_FILES_BUCKET = "raw-files";
@@ -56,6 +68,126 @@ const buildPreviewFromFullRows = (parsedCsv: ParsedCsvData): CsvPreview => {
   };
 };
 
+const buildCsvPreviewPayload = (parsedCsv: ParsedCsvData): CsvPreviewPayload => {
+  const limitedHeaders = parsedCsv.headers.slice(0, 12);
+  const rows = parsedCsv.rows.slice(0, 8).map((row) => {
+    const normalized: Record<string, string> = {};
+    limitedHeaders.forEach((header) => {
+      normalized[header] = row[header] ?? "";
+    });
+    return normalized;
+  });
+
+  const numericSummary = limitedHeaders
+    .map((header) => {
+      const values = parsedCsv.rows
+        .map((row) => Number.parseFloat(String(row[header] ?? "").replace(",", ".")))
+        .filter((value) => Number.isFinite(value));
+
+      if (values.length < 2) return null;
+
+      const total = values.reduce((sum, value) => sum + value, 0);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+
+      return {
+        column: header,
+        avg: Number((total / values.length).toFixed(3)),
+        min: Number(min.toFixed(3)),
+        max: Number(max.toFixed(3)),
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .slice(0, 6);
+
+  return {
+    headers: limitedHeaders,
+    rows,
+    numericSummary,
+  };
+};
+
+const parseJsonCandidate = (value: string): unknown => {
+  return JSON.parse(value);
+};
+
+const sanitizeJsonText = (raw: string): string => {
+  const withoutFence = raw
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  const start = withoutFence.indexOf("{");
+  const end = withoutFence.lastIndexOf("}");
+
+  if (start >= 0 && end > start) {
+    return withoutFence.slice(start, end + 1);
+  }
+
+  return withoutFence;
+};
+
+const parseDiagnosisJson = async (rawJson: string): Promise<AiDiagnosis> => {
+  const candidates = [rawJson, sanitizeJsonText(rawJson)];
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = parseJsonCandidate(candidate) as Partial<AiDiagnosis>;
+      if (
+        parsed &&
+        typeof parsed.tespit === "string" &&
+        Array.isArray(parsed.hedef_kolonlar) &&
+        typeof parsed.matematiksel_islem_talimati === "string"
+      ) {
+        return {
+          tespit: parsed.tespit,
+          hedef_kolonlar: parsed.hedef_kolonlar.map((item) => String(item)),
+          matematiksel_islem_talimati: parsed.matematiksel_islem_talimati,
+        };
+      }
+    } catch {
+      // Continue to repair fallback.
+    }
+  }
+
+  const { text: repairedJson } = await generateGeminiText({
+    prompt: [
+      "Asagidaki metni SADECE gecerli JSON'a cevir.",
+      "Sema zorunlu:",
+      '{ "tespit": "string", "hedef_kolonlar": ["string"], "matematiksel_islem_talimati": "string" }',
+      "Ek aciklama yazma.",
+      "METIN:",
+      rawJson,
+    ].join("\n"),
+    responseMimeType: "application/json",
+    temperature: 0,
+    maxOutputTokens: 500,
+    timeoutMs: 15000,
+  });
+
+  try {
+    const repaired = parseJsonCandidate(sanitizeJsonText(repairedJson)) as Partial<AiDiagnosis>;
+    if (
+      repaired &&
+      typeof repaired.tespit === "string" &&
+      Array.isArray(repaired.hedef_kolonlar) &&
+      typeof repaired.matematiksel_islem_talimati === "string"
+    ) {
+      return {
+        tespit: repaired.tespit,
+        hedef_kolonlar: repaired.hedef_kolonlar.map((item) => String(item)),
+        matematiksel_islem_talimati: repaired.matematiksel_islem_talimati,
+      };
+    }
+  } catch {
+    // Throw below with unified error message.
+  }
+
+  throw new Error("AI JSON formatinda gecerli teshis yaniti donmedi.");
+};
+
 const callGeminiForDiagnosis = async (preview: CsvPreview): Promise<AiDiagnosis> => {
   const userPayload = {
     headers: preview.headers,
@@ -74,28 +206,7 @@ const callGeminiForDiagnosis = async (preview: CsvPreview): Promise<AiDiagnosis>
     throw new Error("AI bos yanit dondu.");
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawJson);
-  } catch {
-    throw new Error("AI JSON formatinda yanit donmedi.");
-  }
-
-  const diagnosis = parsed as Partial<AiDiagnosis>;
-  if (
-    !diagnosis ||
-    typeof diagnosis.tespit !== "string" ||
-    !Array.isArray(diagnosis.hedef_kolonlar) ||
-    typeof diagnosis.matematiksel_islem_talimati !== "string"
-  ) {
-    throw new Error("AI yaniti beklenen JSON semasina uymuyor.");
-  }
-
-  return {
-    tespit: diagnosis.tespit,
-    hedef_kolonlar: diagnosis.hedef_kolonlar.map((item) => String(item)),
-    matematiksel_islem_talimati: diagnosis.matematiksel_islem_talimati,
-  };
+  return parseDiagnosisJson(rawJson);
 };
 
 export async function POST(request: NextRequest) {
@@ -129,6 +240,7 @@ export async function POST(request: NextRequest) {
     const csvContent = await data.text();
     const parsedCsv = parseFullCsvContent(csvContent);
     const preview = buildPreviewFromFullRows(parsedCsv);
+    const csvPreview = buildCsvPreviewPayload(parsedCsv);
     const aiResult = await callGeminiForDiagnosis(preview);
     const summary = buildOptimizationSummary(parsedCsv, aiResult);
     const oeeSummary = buildOeeSummary(parsedCsv, summary);
@@ -139,7 +251,21 @@ export async function POST(request: NextRequest) {
       { optimizationMethod: summary.optimizationMethod },
       { timeoutMs: 30000 }
     );
+    let practiceProblems = "";
     let advancedInsights = "";
+    try {
+      practiceProblems = await generatePracticeProblems({
+        summary,
+        oeeSummary,
+        diagnosis: aiResult,
+        contributions: contributionSummary,
+        anomalies,
+        parsedCsv,
+      });
+    } catch {
+      practiceProblems =
+        "## Ornek Soru Uretimi\nBu calistirmada otomatik soru-cozum uretimi tamamlanamadi. Mevcut analiz raporlari gecerlidir.";
+    }
     try {
       advancedInsights = await generateAdvancedInsights({
         summary,
@@ -153,6 +279,17 @@ export async function POST(request: NextRequest) {
 
     let analysisResultId: string | null = null;
     let saveMessage: string | null = null;
+    const analysisPayload = {
+      summary,
+      oeeSummary,
+      contributionSummary,
+      anomalies,
+      report,
+      actionPlan,
+      practiceProblems,
+      advancedInsights,
+      csvPreview,
+    };
 
     try {
       const { data: savedRow, error: saveError } = await serviceSupabase
@@ -164,6 +301,7 @@ export async function POST(request: NextRequest) {
           new_total_energy: summary.newTotalEnergy,
           savings_amount: summary.energySaved,
           ai_report_markdown: report,
+          analysis_payload: analysisPayload,
         })
         .select("id")
         .single();
@@ -184,8 +322,10 @@ export async function POST(request: NextRequest) {
         oeeSummary,
         contributionSummary,
         anomalies,
+        csvPreview,
         report,
         actionPlan,
+        practiceProblems,
         advancedInsights,
         analysisResultId,
         saveMessage,

@@ -100,7 +100,10 @@ export default function HomeClient() {
   }, [selectedJobId]);
 
   useEffect(() => {
-    void refreshJobs();
+    const timeout = window.setTimeout(() => {
+      void refreshJobs();
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [refreshJobs]);
 
   useEffect(() => {
@@ -111,7 +114,10 @@ export default function HomeClient() {
   }, [refreshJobs]);
 
   useEffect(() => {
-    void refreshPreview();
+    const timeout = window.setTimeout(() => {
+      void refreshPreview();
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [refreshPreview]);
 
   useEffect(() => {

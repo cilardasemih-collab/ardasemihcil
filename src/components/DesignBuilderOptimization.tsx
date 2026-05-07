@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CheckCircle2, Download, FileBarChart2, Loader2, Play, Plus, QrCode, RefreshCcw, Trash2, Trophy } from "lucide-react";
-import { QRCodeCanvas } from "qrcode.react";
+import { AlertTriangle, BarChart3, CheckCircle2, Download, FileBarChart2, Loader2, Play, Plus, RefreshCcw, Trash2, Trophy } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { buildDesignBuilderInsightPayload } from "@/lib/designbuilder/insights";
 import { parseDesignBuilderCsv, parseManualUValue } from "@/lib/designbuilder/parser";
 import { buildReport, rankReports } from "@/lib/designbuilder/scoring";
-import type { DesignBuilderReport, MonthlyPoint, QueueStatus, RankedReport } from "@/lib/designbuilder/types";
+import type { DesignBuilderInsightPayload, DesignBuilderReport, MonthlyPoint, QueueStatus, RankedReport } from "@/lib/designbuilder/types";
 
 type QueueItem = {
   id: string;
@@ -13,12 +14,6 @@ type QueueItem = {
   manualUValue: string;
   status: QueueStatus;
   error?: string;
-};
-
-type QrItem = {
-  id: string;
-  label: string;
-  value: string;
 };
 
 const numberFmt = (value: number, maximumFractionDigits = 2) =>
@@ -115,7 +110,6 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 }
 
 export default function DesignBuilderOptimization() {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [manualUValue, setManualUValue] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [reportsById, setReportsById] = useState<Record<string, DesignBuilderReport>>({});
@@ -126,29 +120,46 @@ export default function DesignBuilderOptimization() {
   const [aiError, setAiError] = useState("");
   const [aiReport, setAiReport] = useState("");
   const [aiActionPlan, setAiActionPlan] = useState<string[]>([]);
+  const [aiMeta, setAiMeta] = useState<{ fallbackUsed: boolean; model: string | null } | null>(null);
 
-  const [qrLabel, setQrLabel] = useState("");
-  const [qrValue, setQrValue] = useState("");
-  const [qrItems, setQrItems] = useState<QrItem[]>([]);
-  const qrCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const pdfRootRef = useRef<HTMLDivElement | null>(null);
+  const pdfSectionsRef = useRef<HTMLDivElement | null>(null);
 
-  const addSelectedFilesToQueue = () => {
-    if (selectedFiles.length === 0) return;
+  const resetAiInsights = () => {
+    setAiError("");
+    setAiReport("");
+    setAiActionPlan([]);
+    setAiMeta(null);
+  };
 
-    const created = selectedFiles.map((file) => ({
+  const addFilesToQueue = (files: File[]) => {
+    if (files.length === 0) return;
+
+    const created = files.map((file) => ({
       id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       file,
       manualUValue,
       status: "queued" as const,
     }));
 
+    resetAiInsights();
     setQueue((prev) => [...prev, ...created]);
-    setSelectedFiles([]);
     setManualUValue("");
   };
 
+  const handleFileSelection = (files: FileList | null, input: HTMLInputElement) => {
+    const selected = Array.from(files ?? []);
+    addFilesToQueue(selected);
+    input.value = "";
+  };
+
+  const updateQueueManualUValue = (id: string, value: string) => {
+    resetAiInsights();
+    setQueue((prev) => prev.map((item) => (item.id === id ? { ...item, manualUValue: value } : item)));
+  };
+
   const removeQueueItem = (id: string) => {
+    resetAiInsights();
     setQueue((prev) => prev.filter((item) => item.id !== id || item.status === "processing"));
     setReportsById((prev) => {
       const clone = { ...prev };
@@ -159,7 +170,7 @@ export default function DesignBuilderOptimization() {
 
   const resetAll = () => {
     if (processing) return;
-    setSelectedFiles([]);
+    resetAiInsights();
     setManualUValue("");
     setQueue([]);
     setReportsById({});
@@ -172,6 +183,7 @@ export default function DesignBuilderOptimization() {
     const pendingIds = queue.filter((item) => item.status === "queued").map((item) => item.id);
     if (pendingIds.length === 0) return;
 
+    resetAiInsights();
     setProcessing(true);
 
     for (const id of pendingIds) {
@@ -189,6 +201,7 @@ export default function DesignBuilderOptimization() {
           fileName: item.file.name,
           manualU: parseManualUValue(item.manualUValue),
           detectedU: parsed.detectedUValue,
+          detectedUValueSource: parsed.detectedUValueSource,
           sourceNotes: parsed.sourceNotes,
           months: parsed.months,
         });
@@ -211,43 +224,14 @@ export default function DesignBuilderOptimization() {
 
   const ranking = useMemo<RankedReport[]>(() => rankReports(reports), [reports]);
   const winner = ranking[0] ?? null;
+  const insightPayload = useMemo<DesignBuilderInsightPayload>(() => buildDesignBuilderInsightPayload(ranking), [ranking]);
+  const recommendation = insightPayload.recommendation;
 
   const queueCounts = useMemo(() => {
     const acc = { queued: 0, processing: 0, completed: 0, failed: 0 };
     for (const item of queue) acc[item.status] += 1;
     return acc;
   }, [queue]);
-
-  const addQr = () => {
-    const value = qrValue.trim();
-    if (!value) return;
-
-    const item: QrItem = {
-      id: `qr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      label: qrLabel.trim() || `QR-${qrItems.length + 1}`,
-      value,
-    };
-
-    setQrItems((prev) => [item, ...prev]);
-    setQrLabel("");
-    setQrValue("");
-  };
-
-  const removeQr = (id: string) => {
-    setQrItems((prev) => prev.filter((item) => item.id !== id));
-    delete qrCanvasRefs.current[id];
-  };
-
-  const downloadQrPng = (item: QrItem) => {
-    const canvas = qrCanvasRefs.current[item.id];
-    if (!canvas) return;
-
-    const dataUrl = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = `${item.label.replace(/\s+/g, "-").toLowerCase()}-qr.png`;
-    link.click();
-  };
 
   const exportPdf = async () => {
     if (!pdfRootRef.current || reports.length === 0) return;
@@ -261,7 +245,7 @@ export default function DesignBuilderOptimization() {
       const margin = 8;
       const contentWidth = pageWidth - margin * 2;
 
-      const sections = Array.from(pdfRootRef.current.querySelectorAll<HTMLElement>("[data-pdf-section='1']"));
+      const sections = Array.from(pdfSectionsRef.current?.querySelectorAll<HTMLElement>("[data-pdf-section='1']") ?? []);
       let firstPage = true;
 
       for (const section of sections) {
@@ -301,59 +285,38 @@ export default function DesignBuilderOptimization() {
   const generateAiInsights = async () => {
     if (!winner || ranking.length === 0) return;
 
-    const worstHvac = Math.max(...ranking.map((item) => item.hvacTotal));
-    const saved = Math.max(0, worstHvac - winner.hvacTotal);
-
     setIsAiLoading(true);
     setAiError("");
     setAiReport("");
     setAiActionPlan([]);
+    setAiMeta(null);
 
     try {
-      const [reportRes, actionRes] = await Promise.all([
-        fetch("/api/generate-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            summary: {
-              rowCount: winner.months.length,
-              oldTotalEnergy: worstHvac,
-              newTotalEnergy: winner.hvacTotal,
-              energySaved: saved,
-              optimizationMethod: `DesignBuilder U-value karsilastirma (en iyi U: ${winner.uValue ?? "bilinmiyor"})`,
-            },
-          }),
-        }),
-        fetch("/api/generate-action-plan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            optimizationMethod: `DesignBuilder karsilastirma kazanan dosya: ${winner.fileName}`,
-          }),
-        }),
-      ]);
+      const response = await fetch("/api/designbuilder-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reports }),
+      });
 
-      const reportPayload = (await reportRes.json().catch(() => ({}))) as {
+      const payload = (await response.json().catch(() => ({}))) as {
         success?: boolean;
-        report?: string;
-        error?: string;
-      };
-      const actionPayload = (await actionRes.json().catch(() => ({}))) as {
-        success?: boolean;
+        markdown?: string;
         actionPlan?: string[];
+        fallbackUsed?: boolean;
+        model?: string | null;
         error?: string;
       };
 
-      if (!reportRes.ok || !reportPayload.success) {
-        throw new Error(reportPayload.error ?? "AI rapor olusturulamadi.");
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error ?? "AI rapor olusturulamadi.");
       }
 
-      if (!actionRes.ok || !actionPayload.success) {
-        throw new Error(actionPayload.error ?? "AI aksiyon plani olusturulamadi.");
-      }
-
-      setAiReport(String(reportPayload.report ?? ""));
-      setAiActionPlan(Array.isArray(actionPayload.actionPlan) ? actionPayload.actionPlan : []);
+      setAiReport(String(payload.markdown ?? ""));
+      setAiActionPlan(Array.isArray(payload.actionPlan) ? payload.actionPlan : []);
+      setAiMeta({
+        fallbackUsed: Boolean(payload.fallbackUsed),
+        model: payload.model ?? null,
+      });
     } catch (error) {
       setAiError(error instanceof Error ? error.message : "AI analizinde beklenmeyen hata.");
     } finally {
@@ -363,7 +326,7 @@ export default function DesignBuilderOptimization() {
 
   return (
     <div className="space-y-6" ref={pdfRootRef}>
-      <section data-pdf-section="1" className="rounded-3xl border border-cyan-100 bg-white/90 p-6 shadow-sm">
+      <section className="rounded-3xl border border-cyan-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="inline-flex rounded-full border border-cyan-300 bg-cyan-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-cyan-800">
@@ -389,7 +352,7 @@ export default function DesignBuilderOptimization() {
               accept=".csv,text/csv"
               multiple
               className="mt-2 block w-full text-xs"
-              onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
+              onChange={(event) => handleFileSelection(event.target.files, event.currentTarget)}
             />
           </label>
 
@@ -403,14 +366,9 @@ export default function DesignBuilderOptimization() {
             />
           </label>
 
-          <button
-            type="button"
-            onClick={addSelectedFilesToQueue}
-            disabled={selectedFiles.length === 0 || processing}
-            className="inline-flex h-full items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
-          >
-            <Plus size={16} /> Kuyruga Ekle
-          </button>
+          <div className="flex h-full items-center rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-xs font-black text-cyan-900">
+            <Plus size={16} className="mr-2" /> Dosya secince otomatik kuyruga eklenir
+          </div>
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-4">
@@ -423,18 +381,28 @@ export default function DesignBuilderOptimization() {
         <div className="mt-4 space-y-2">
           {queue.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-500">
-              Kuyruk bos. CSV secip ekleyerek baslayabilirsin.
+              Kuyruk bos. CSV sectiginde dosyalar otomatik eklenir.
             </p>
           ) : (
             queue.map((item, index) => (
               <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                <div>
+                <div className="min-w-[220px] flex-1">
                   <p className="text-sm font-black text-slate-900">{index + 1}. {item.file.name}</p>
                   <p className="text-xs font-semibold text-slate-600">
                     U: {item.manualUValue || "otomatik"} · Durum: {item.status}
                     {item.error ? ` · Hata: ${item.error}` : ""}
                   </p>
                 </div>
+                <label className="min-w-[140px] flex-1 text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
+                  U Override
+                  <input
+                    value={item.manualUValue}
+                    onChange={(event) => updateQueueManualUValue(item.id, event.target.value)}
+                    placeholder="0,57"
+                    disabled={item.status === "processing" || processing}
+                    className="mt-1 h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 outline-none disabled:opacity-50"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={() => removeQueueItem(item.id)}
@@ -470,6 +438,7 @@ export default function DesignBuilderOptimization() {
         </div>
       </section>
 
+      <div className="space-y-6" ref={pdfSectionsRef}>
       <section data-pdf-section="1" className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
         <h3 className="text-lg font-black text-slate-900">Dosya Bazli Detayli Raporlar</h3>
 
@@ -480,25 +449,36 @@ export default function DesignBuilderOptimization() {
         ) : (
           <div className="mt-4 space-y-4">
             {reports.map((report) => (
-              <article key={report.id} data-pdf-section="1" className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <article key={report.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-base font-black text-slate-900">{report.fileName}</h4>
-                    <p className="mt-1 text-xs font-semibold text-slate-600">
-                      U: {report.uValue !== null ? numberFmt(report.uValue, 3) : "bilinmiyor"} · Kaynak: {report.uValueSource}
-                    </p>
+                    <div>
+                      <h4 className="text-base font-black text-slate-900">{report.fileName}</h4>
+                      <p className="mt-1 text-xs font-semibold text-slate-600">
+                        U: {report.uValue !== null ? numberFmt(report.uValue, 3) : "bilinmiyor"} · Kaynak: {report.uValueSource}
+                      </p>
+                      {report.sourceNotes.length > 0 ? (
+                        <p className="mt-1 text-[11px] font-semibold text-slate-500">{report.sourceNotes.join(" ")}</p>
+                      ) : null}
+                    </div>
+                    <span className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-white px-2 py-1 text-xs font-black text-slate-700">
+                      <FileBarChart2 size={12} /> Sistem: {numberFmt(report.totalSystemEnergy)}
+                    </span>
                   </div>
-                  <span className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-white px-2 py-1 text-xs font-black text-slate-700">
-                    <FileBarChart2 size={12} /> HVAC: {numberFmt(report.hvacTotal)}
-                  </span>
-                </div>
 
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <MetricCard label="Toplam Heating" value={numberFmt(report.totalHeatingGas)} />
-                  <MetricCard label="Toplam Cooling" value={numberFmt(report.totalCoolingElectricity)} />
-                  <MetricCard label="Fan + Pump" value={numberFmt(report.totalFans + report.totalPumps)} />
-                  <MetricCard label="Comfort Penalty" value={numberFmt(report.comfortPenalty)} />
-                </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <MetricCard label="Toplam Heating" value={numberFmt(report.totalHeatingGas)} />
+                    <MetricCard label="Toplam Cooling" value={numberFmt(report.totalCoolingElectricity)} />
+                    <MetricCard label="Toplam Sistem" value={numberFmt(report.totalSystemEnergy)} />
+                    <MetricCard label="Konfor Bandi" value={`%${numberFmt(report.comfortBandRate * 100, 1)}`} />
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">HVAC: {numberFmt(report.hvacTotal)}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Fan + Pump: {numberFmt(report.totalParasiticEnergy)}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Temp Swing: {numberFmt(report.temperatureSwing, 2)} C</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Peak Heat: {report.peakHeatingMonth ?? "-"}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Peak Cool: {report.peakCoolingMonth ?? "-"}</span>
+                  </div>
 
                 <div className="mt-4 grid gap-4 xl:grid-cols-2">
                   <div>
@@ -533,13 +513,106 @@ export default function DesignBuilderOptimization() {
               </p>
             </div>
 
+            {recommendation ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    label="Onerilen U"
+                    value={recommendation.recommendedUValue !== null ? numberFmt(recommendation.recommendedUValue, 3) : "eksik"}
+                  />
+                  <MetricCard label="Guven" value={`${recommendation.confidenceLabel} (${recommendation.confidenceScore}/100)`} />
+                  <MetricCard label="Sistem Tasarrufu" value={`%${numberFmt(recommendation.savingsVsReferencePct, 2)}`} />
+                  <MetricCard label="HVAC Tasarrufu" value={`%${numberFmt(recommendation.hvacSavingsVsReferencePct, 2)}`} />
+                </div>
+
+                <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+                  <p className="text-sm font-black text-cyan-900">Karar Ozeti</p>
+                  <p className="mt-2 text-sm font-semibold text-cyan-950">{recommendation.reasonSummary}</p>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-cyan-700">Guclu Gerekceler</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-cyan-950">
+                        {recommendation.reasons.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-cyan-700">Dikkat Noktalari</p>
+                      {recommendation.watchouts.length > 0 ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-cyan-950">
+                          {recommendation.watchouts.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-2 text-sm font-semibold text-cyan-950">Bu veri setinde belirgin bir ek risk notu olusmadi.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {insightPayload.trendPoints.length > 0 ? (
+                  <div className="overflow-hidden rounded-2xl border border-slate-200">
+                    <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+                      <p className="text-sm font-black text-slate-900">U Degeri Trendi</p>
+                      <p className="text-xs font-semibold text-slate-600">
+                        Trend: {recommendation.trendDirection} · Test araligi: {recommendation.testedRange ? `${numberFmt(recommendation.testedRange[0], 3)} - ${numberFmt(recommendation.testedRange[1], 3)}` : "yetersiz"}
+                      </p>
+                    </div>
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-white text-slate-700">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-black">Dosya</th>
+                          <th className="px-3 py-2 text-left font-black">U</th>
+                          <th className="px-3 py-2 text-left font-black">Sistem</th>
+                          <th className="px-3 py-2 text-left font-black">Konfor</th>
+                          <th className="px-3 py-2 text-left font-black">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white text-slate-700">
+                        {insightPayload.trendPoints.map((item) => (
+                          <tr key={`${item.fileName}-${item.uValue}`}>
+                            <td className="px-3 py-2 font-semibold">{item.fileName}</td>
+                            <td className="px-3 py-2">{numberFmt(item.uValue, 3)}</td>
+                            <td className="px-3 py-2">{numberFmt(item.totalSystemEnergy)}</td>
+                            <td className="px-3 py-2">%{numberFmt(item.comfortBandRate * 100, 1)}</td>
+                            <td className="px-3 py-2">{numberFmt(item.finalScore, 4)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {insightPayload.monthlyDeltas.length > 0 ? (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-black text-slate-900">Aylik En Iyi Kazanim</p>
+                      <p className="mt-2 text-sm font-semibold text-slate-700">
+                        {insightPayload.biggestSavingsMonth?.label ?? "-"} ayinda toplam sistem iyilesmesi {numberFmt(Math.abs(insightPayload.biggestSavingsMonth?.systemEnergyDelta ?? 0))} kWh.
+                      </p>
+                    </article>
+                    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-black text-slate-900">Aylik En Zayif Nokta</p>
+                      <p className="mt-2 text-sm font-semibold text-slate-700">
+                        {insightPayload.biggestPenaltyMonth?.label ?? "-"} ayinda toplam sistem sapmasi {numberFmt(Math.max(0, insightPayload.biggestPenaltyMonth?.systemEnergyDelta ?? 0))} kWh.
+                      </p>
+                    </article>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
             <div className="overflow-hidden rounded-2xl border border-slate-200">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-100 text-slate-700">
                   <tr>
                     <th className="px-3 py-2 text-left font-black">Dosya</th>
                     <th className="px-3 py-2 text-left font-black">U Degeri</th>
+                    <th className="px-3 py-2 text-left font-black">Sistem</th>
                     <th className="px-3 py-2 text-left font-black">HVAC</th>
+                    <th className="px-3 py-2 text-left font-black">Konfor</th>
                     <th className="px-3 py-2 text-left font-black">Final Score</th>
                     <th className="px-3 py-2 text-left font-black">Durum</th>
                   </tr>
@@ -551,7 +624,9 @@ export default function DesignBuilderOptimization() {
                       <tr key={item.id} className={isWinner ? "bg-emerald-50" : ""}>
                         <td className="px-3 py-2 font-semibold">{item.fileName}</td>
                         <td className="px-3 py-2">{item.uValue !== null ? numberFmt(item.uValue, 3) : "-"}</td>
+                        <td className="px-3 py-2">{numberFmt(item.totalSystemEnergy)}</td>
                         <td className="px-3 py-2">{numberFmt(item.hvacTotal)}</td>
+                        <td className="px-3 py-2">%{numberFmt(item.comfortBandRate * 100, 1)}</td>
                         <td className="px-3 py-2">{numberFmt(item.finalScore, 4)}</td>
                         <td className="px-3 py-2">
                           {isWinner ? (
@@ -586,7 +661,14 @@ export default function DesignBuilderOptimization() {
             {aiReport ? (
               <article className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-700">AI Muhendislik Yorumu</p>
-                <pre className="whitespace-pre-wrap text-sm text-violet-900">{aiReport}</pre>
+                <div className="prose prose-sm max-w-none text-violet-950">
+                  <ReactMarkdown>{aiReport}</ReactMarkdown>
+                </div>
+                {aiMeta ? (
+                  <p className="mt-3 text-[11px] font-semibold text-violet-700">
+                    {aiMeta.fallbackUsed ? "Yerel teknik fallback kullanildi." : `Model: ${aiMeta.model ?? "AI"}`}
+                  </p>
+                ) : null}
               </article>
             ) : null}
 
@@ -603,87 +685,8 @@ export default function DesignBuilderOptimization() {
           </div>
         )}
       </section>
+      </div>
 
-      <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-        <h3 className="inline-flex items-center gap-2 text-lg font-black text-slate-900"><QrCode size={18} /> Suresiz QR Olusturucu</h3>
-        <p className="mt-2 text-sm font-semibold text-slate-600">Olusturulan QR kodlar sure sinirsizdir ve PNG olarak indirilebilir.</p>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_140px]">
-          <label className="rounded-2xl border border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700">
-            QR Etiketi
-            <input
-              value={qrLabel}
-              onChange={(event) => setQrLabel(event.target.value)}
-              placeholder="Orn: Proje Giris"
-              className="mt-2 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 outline-none"
-            />
-          </label>
-
-          <label className="rounded-2xl border border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700">
-            QR Icerigi
-            <input
-              value={qrValue}
-              onChange={(event) => setQrValue(event.target.value)}
-              placeholder="https://..."
-              className="mt-2 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 outline-none"
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={addQr}
-            disabled={!qrValue.trim()}
-            className="inline-flex h-full items-center justify-center gap-2 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
-          >
-            <Plus size={16} /> Olustur
-          </button>
-        </div>
-
-        {qrItems.length === 0 ? (
-          <p className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-500">Henuz QR yok.</p>
-        ) : (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {qrItems.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-black text-slate-900">{item.label}</p>
-                    <p className="mt-1 break-all text-[11px] font-semibold text-slate-600">{item.value}</p>
-                    <p className="mt-1 text-[10px] font-semibold text-emerald-700">Suresiz</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeQr(item.id)}
-                    className="inline-flex h-8 items-center gap-1 rounded-xl border border-slate-300 px-2 text-xs font-black text-slate-700"
-                  >
-                    <Trash2 size={12} /> Sil
-                  </button>
-                </div>
-
-                <div className="mt-3 flex justify-center rounded-2xl bg-white p-3">
-                  <QRCodeCanvas
-                    value={item.value}
-                    size={180}
-                    level="H"
-                    includeMargin
-                    ref={(node) => {
-                      qrCanvasRefs.current[item.id] = node;
-                    }}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => downloadQrPng(item)}
-                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-3 text-xs font-black text-white"
-                >
-                  <Download size={14} /> PNG Indir
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }

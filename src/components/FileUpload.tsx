@@ -6,9 +6,9 @@ import ReactMarkdown from "react-markdown";
 
 import AnomalyTable from "@/components/AnomalyTable";
 import ContributionChart from "@/components/ContributionChart";
+import CsvPreviewPanel, { type CsvPreviewData } from "@/components/CsvPreviewPanel";
 import EnergyChart from "@/components/EnergyChart";
 import OeeChart from "@/components/OeeChart";
-import { supabaseClient } from "@/lib/supabaseClient";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
 
@@ -46,8 +46,6 @@ type AnomalyItem = {
   zScore: number;
 };
 
-const RAW_FILES_BUCKET = "raw-files";
-
 const isCsvFile = (file: File): boolean => {
   const nameCheck = file.name.toLowerCase().endsWith(".csv");
   const typeCheck = file.type === "text/csv" || file.type === "application/vnd.ms-excel";
@@ -64,8 +62,10 @@ export default function FileUpload() {
   const [oeeSummary, setOeeSummary] = useState<OeeSummary | null>(null);
   const [contributionSummary, setContributionSummary] = useState<ColumnContribution[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
+  const [csvPreview, setCsvPreview] = useState<CsvPreviewData | null>(null);
   const [advancedInsights, setAdvancedInsights] = useState("");
   const [report, setReport] = useState<string>("");
+  const [practiceProblems, setPracticeProblems] = useState<string>("");
   const [actionPlan, setActionPlan] = useState<string[]>([]);
   const [analysisResultId, setAnalysisResultId] = useState<string>("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -94,8 +94,10 @@ export default function FileUpload() {
     setOeeSummary(null);
     setContributionSummary([]);
     setAnomalies([]);
+    setCsvPreview(null);
     setAdvancedInsights("");
     setReport("");
+    setPracticeProblems("");
     setActionPlan([]);
     setAnalysisResultId("");
 
@@ -109,17 +111,22 @@ export default function FileUpload() {
     }, 180);
 
     try {
-      const extension = file.name.split(".").pop() ?? "csv";
-      const filePath = `uploads/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
+      const formData = new FormData();
+      formData.append("file", file);
 
-      const { data, error } = await supabaseClient.storage.from(RAW_FILES_BUCKET).upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: "text/csv",
+      const uploadResponse = await fetch("/api/upload-csv", {
+        method: "POST",
+        body: formData,
       });
+      const uploadPayload = (await uploadResponse.json().catch(() => ({}))) as {
+        success?: boolean;
+        filePath?: string;
+        fileName?: string;
+        error?: string;
+      };
 
-      if (error) {
-        throw new Error(error.message);
+      if (!uploadResponse.ok || !uploadPayload.success || !uploadPayload.filePath) {
+        throw new Error(uploadPayload.error ?? "Dosya yuklenemedi.");
       }
 
       setProgress(100);
@@ -127,17 +134,13 @@ export default function FileUpload() {
       setMessage("Yukleme basarili. Dosya analiz adimina hazir.");
       didSucceed = true;
 
-      if (!data?.path) {
-        throw new Error("Yuklenen dosya yolu alinamadi.");
-      }
-
       setIsAnalyzing(true);
       setMessage("Yapay Zeka Veriyi Analiz Ediyor...");
 
       const analyzeResponse = await fetch("/api/analyze-csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filePath: data.path, fileName: file.name }),
+        body: JSON.stringify({ filePath: uploadPayload.filePath, fileName: uploadPayload.fileName ?? file.name }),
       });
 
       const analyzePayload = (await analyzeResponse.json().catch(() => ({}))) as {
@@ -147,8 +150,10 @@ export default function FileUpload() {
         oeeSummary?: OeeSummary;
         contributionSummary?: ColumnContribution[];
         anomalies?: AnomalyItem[];
+        csvPreview?: CsvPreviewData;
         advancedInsights?: string;
         report?: string;
+        practiceProblems?: string;
         actionPlan?: string[];
         analysisResultId?: string | null;
         saveMessage?: string | null;
@@ -163,8 +168,10 @@ export default function FileUpload() {
       setOeeSummary(analyzePayload.oeeSummary ?? null);
       setContributionSummary(Array.isArray(analyzePayload.contributionSummary) ? analyzePayload.contributionSummary : []);
       setAnomalies(Array.isArray(analyzePayload.anomalies) ? analyzePayload.anomalies : []);
+      setCsvPreview(analyzePayload.csvPreview ?? null);
       setAdvancedInsights(analyzePayload.advancedInsights ?? "");
       setReport(analyzePayload.report ?? "");
+      setPracticeProblems(analyzePayload.practiceProblems ?? "");
       setActionPlan(Array.isArray(analyzePayload.actionPlan) ? analyzePayload.actionPlan : []);
       setAnalysisResultId(analyzePayload.analysisResultId ?? "");
 
@@ -278,6 +285,8 @@ export default function FileUpload() {
 
         {summary ? (
           <div className="space-y-3 pt-2">
+            {csvPreview ? <CsvPreviewPanel preview={csvPreview} /> : null}
+
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Optimizasyon Ozeti - {summary.rowCount} satir
             </p>
@@ -349,6 +358,15 @@ export default function FileUpload() {
                 <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Nihai Muhendislik Raporu</p>
                 <div className="prose prose-slate max-w-none prose-headings:font-extrabold prose-h1:text-slate-900 prose-h2:text-slate-900 prose-strong:text-slate-900 prose-li:my-1">
                   <ReactMarkdown>{report}</ReactMarkdown>
+                </div>
+              </article>
+            ) : null}
+
+            {practiceProblems ? (
+              <article className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-indigo-700">CSV Tabanli Ornek Sorular ve Cozumler</p>
+                <div className="prose prose-slate max-w-none prose-headings:text-indigo-900 prose-strong:text-indigo-900 prose-li:my-1">
+                  <ReactMarkdown>{practiceProblems}</ReactMarkdown>
                 </div>
               </article>
             ) : null}

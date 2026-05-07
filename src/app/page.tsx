@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import AnalysisHistory from "@/components/AnalysisHistory";
-import DesignBuilderOptimization from "@/components/DesignBuilderOptimization";
+import DesignBuilderStudio from "@/components/DesignBuilderStudio";
 import FileUpload from "@/components/FileUpload";
 
 type MainTab = "current" | "designbuilder";
@@ -37,6 +38,9 @@ export default function Page() {
               >
                 DesignBuilder Optimizasyon
               </button>
+              <Link href="/qr-olusturucu" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
+                QR Olusturucu
+              </Link>
             </div>
           </div>
           <h1 className="text-4xl font-black leading-tight text-slate-900 md:text-5xl">
@@ -53,11 +57,11 @@ export default function Page() {
           <p className="max-w-xl text-base text-slate-700">
             {activeTab === "current"
               ? "Bu adimda sadece CSV dosyasini guvenli sekilde Supabase Storage'a aliyoruz. Sonraki adimlarda AI formulu cikaracak, optimize edecek ve nihai raporu uretecek."
-              : "Bu sekmede dosyalari sirayla analiz edip detayli grafikli rapor cikarabilir, PDF indirebilir ve suresiz QR kod uretebilirsin."}
+              : "Bu sekmede DesignBuilder CSV exportlarini dogrudan inceleyebilir, detayli karsilastirma cikarabilir ve en iyi U degeri kararini alabilirsin."}
           </p>
         </section>
 
-        {activeTab === "current" ? <FileUpload /> : <DesignBuilderOptimization />}
+        {activeTab === "current" ? <FileUpload /> : <DesignBuilderStudio />}
       </div>
 
       {activeTab === "current" ? (

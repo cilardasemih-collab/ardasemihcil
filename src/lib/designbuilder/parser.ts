@@ -13,6 +13,12 @@ type HeaderIndexMap = {
   outsideTemp: number;
 };
 
+type ParsedTable = {
+  headers: string[];
+  units: string[];
+  rows: string[][];
+};
+
 const normalizeText = (value: string) => value.replace(/^\uFEFF/, "").trim();
 
 const normalizeToken = (value: string) =>
@@ -61,6 +67,18 @@ const splitCsvLine = (line: string, delimiter: string) => {
 
   out.push(buffer.trim().replace(/^"|"$/g, ""));
   return out;
+};
+
+const isNumericLike = (value: string | undefined) => {
+  const cleaned = String(value ?? "").trim().replace(/^"|"$/g, "");
+  if (!cleaned) return false;
+  return /^-?\d+(?:[\.,]\d+)?$/.test(cleaned);
+};
+
+const isLikelyDateCell = (value: string | undefined) => {
+  const cleaned = String(value ?? "").trim().replace(/^"|"$/g, "");
+  if (!cleaned) return false;
+  return /^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(cleaned) || /^\d{4}-\d{2}-\d{2}/.test(cleaned);
 };
 
 const parseLocaleNumber = (rawValue: string | undefined) => {
@@ -117,6 +135,59 @@ const buildHeaderMap = (headers: string[]): HeaderIndexMap => {
   return map;
 };
 
+const isLikelyUnitsRow = (row: string[]) => {
+  if (row.length === 0) return false;
+  const normalized = row.map((item) => normalizeToken(item));
+  const unitHits = normalized.filter(
+    (item) =>
+      item.includes("kwh") ||
+      item.includes("ac/h") ||
+      item.includes("w/m2") ||
+      item.includes("c") ||
+      item.includes("m3") ||
+      item.includes("kw")
+  ).length;
+
+  return unitHits >= Math.max(2, Math.floor(row.length * 0.2));
+};
+
+const extractStructuredTable = (lines: string[]): ParsedTable => {
+  for (let index = 0; index < lines.length; index += 1) {
+    const delimiter = detectDelimiter(lines[index]);
+    const candidateHeaders = splitCsvLine(lines[index], delimiter);
+
+    try {
+      const headerMap = buildHeaderMap(candidateHeaders);
+      const nextLine = lines[index + 1] ? splitCsvLine(lines[index + 1], delimiter) : [];
+      const hasUnitsRow = isLikelyUnitsRow(nextLine);
+      const dataStartIndex = index + (hasUnitsRow ? 2 : 1);
+      const rawRows = lines.slice(dataStartIndex).map((line) => splitCsvLine(line, delimiter));
+      const rows = rawRows.filter((row) => {
+        const dateValue = row[headerMap.date];
+        if (!isLikelyDateCell(dateValue)) return false;
+
+        const heatingValue = row[headerMap.heating];
+        const coolingValue = row[headerMap.cooling];
+        return isNumericLike(heatingValue) || isNumericLike(coolingValue);
+      });
+
+      if (rows.length === 0) {
+        continue;
+      }
+
+      return {
+        headers: candidateHeaders,
+        units: hasUnitsRow ? nextLine : [],
+        rows,
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error("CSV basligi taninamadi. Date/Time, Heating ve Cooling kolonlari bulunamadi.");
+};
+
 const detectUValueFromHeaders = (headers: string[], units: string[], firstDataRow: string[]) => {
   const normalizedHeaders = headers.map((item) => normalizeToken(item));
   const normalizedUnits = units.map((item) => normalizeToken(item));
@@ -165,14 +236,11 @@ export function parseDesignBuilderCsv(content: string, fileName: string): Parsed
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
-  if (lines.length < 3) {
-    throw new Error("CSV icerigi yetersiz. Baslik, birim ve veri satirlari gerekli.");
+  if (lines.length < 2) {
+    throw new Error("CSV icerigi yetersiz. Baslik ve veri satirlari gerekli.");
   }
 
-  const delimiter = detectDelimiter(lines[0]);
-  const headers = splitCsvLine(lines[0], delimiter);
-  const units = splitCsvLine(lines[1], delimiter);
-  const rows = lines.slice(2).map((line) => splitCsvLine(line, delimiter));
+  const { headers, units, rows } = extractStructuredTable(lines);
 
   if (rows.length === 0) {
     throw new Error("CSV icinde analiz edilecek veri satiri yok.");
@@ -180,6 +248,7 @@ export function parseDesignBuilderCsv(content: string, fileName: string): Parsed
 
   const headerMap = buildHeaderMap(headers);
   const sourceNotes: string[] = [];
+  let detectedUValueSource: ParsedDesignBuilderCsv["detectedUValueSource"] = null;
 
   const months: MonthlyPoint[] = rows.map((row) => ({
     label: monthLabelFromDate(row[headerMap.date]),
@@ -194,6 +263,7 @@ export function parseDesignBuilderCsv(content: string, fileName: string): Parsed
 
   let detectedUValue = detectUValueFromHeaders(headers, units, rows[0] || []);
   if (detectedUValue !== null) {
+    detectedUValueSource = "csv";
     sourceNotes.push("U degeri CSV kolonlarindan otomatik bulundu.");
   }
 
@@ -201,6 +271,7 @@ export function parseDesignBuilderCsv(content: string, fileName: string): Parsed
     const fromName = detectUValueFromFileName(fileName);
     if (fromName !== null) {
       detectedUValue = fromName;
+      detectedUValueSource = "filename";
       sourceNotes.push("U degeri dosya adindan cikarildi.");
     }
   }
@@ -212,6 +283,7 @@ export function parseDesignBuilderCsv(content: string, fileName: string): Parsed
   return {
     months,
     detectedUValue,
+    detectedUValueSource,
     sourceNotes,
   };
 }
