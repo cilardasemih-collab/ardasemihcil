@@ -5,18 +5,18 @@ import { createServiceClient } from "@/lib/supabase/server";
 import type { SimulationData } from "@/lib/designbuilder/workspaceTypes";
 import { buildScenarioSummary } from "@/services/designbuilderScenarioSummary";
 import { generateReportSectionsFrom, listReportSections, updateReportSectionContent } from "@/services/reportEngine";
-import { REPORT_SECTION_DEFINITIONS } from "@/types/report";
+import { REPORT_SECTION_DEFINITIONS, REPORT_SECTION_KEYS } from "@/types/report";
 
 const patchSchema = z.object({
   reportGroupId: z.string().uuid(),
-  sectionKey: z.enum(["project_summary", "envelope_analysis", "energy_and_carbon", "thermal_comfort", "optimization_conclusion"]),
+  sectionKey: z.enum(REPORT_SECTION_KEYS),
   sectionContent: z.string().min(1),
 });
 
 const postSchema = z.object({
   reportGroupId: z.string().uuid(),
   scenarioId: z.string().uuid(),
-  sectionKey: z.enum(["project_summary", "envelope_analysis", "energy_and_carbon", "thermal_comfort", "optimization_conclusion"]),
+  sectionKey: z.enum(REPORT_SECTION_KEYS),
   language: z.enum(["tr", "en"]).default("tr"),
 });
 

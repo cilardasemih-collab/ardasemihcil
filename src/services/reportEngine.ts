@@ -22,6 +22,8 @@ const sectionPayloadSchema = z.object({
   summary: z.string(),
 });
 
+type SectionMemoryItem = { title: string; summary: string };
+
 const sectionPromptForLanguage = (language: "tr" | "en") =>
   language === "tr"
     ? "Cevabi Turkce yaz. Markdown kullan. Gerekli durumlarda alinti yaptigin kurallar icin dokuman adini ve sayfa numarasini parantez icinde ver."
@@ -32,7 +34,7 @@ const buildSectionPrompt = (input: {
   language: "tr" | "en";
   scenarioSummary: ScenarioSummaryPayload;
   retrievedContext: string;
-  memory: Array<{ title: string; summary: string }>;
+  memory: SectionMemoryItem[];
   learnedRulesContext: string;
 }) => {
   return [
@@ -51,8 +53,105 @@ const buildSectionPrompt = (input: {
     JSON.stringify(input.scenarioSummary, null, 2),
     "Retrieved technical context:",
     input.retrievedContext,
-    "Write this section with enough depth to support a long-form professional report. Use subheadings, bullet lists, and short technical paragraphs.",
+    "Write this section with enough depth to support a long-form professional report.",
+    "Target roughly 500-900 words, use clear subheadings, short technical paragraphs, bullet lists, tables when helpful, and explicit engineering interpretation.",
   ].join("\n\n");
+};
+
+const loadRetrievedContext = async (scenarioSummary: ScenarioSummaryPayload) => {
+  try {
+    return formatRetrievedContext(await retrieveRelevantDocuments(scenarioSummary, 5));
+  } catch {
+    return "Harici mevzuat baglami su anda kullanilamiyor. Yorum yalnizca mevcut simulasyon ozetine dayandirilsin.";
+  }
+};
+
+const loadLearnedRulesContext = async (scenarioSummary: ScenarioSummaryPayload) => {
+  try {
+    return formatLearnedRules(await retrieveLearnedRules(scenarioSummary, 5));
+  } catch {
+    return "Ogrenilmis kural bulunamadi.";
+  }
+};
+
+const buildFallbackSection = (input: {
+  section: ReportSectionDefinition;
+  language: "tr" | "en";
+  scenarioSummary: ScenarioSummaryPayload;
+  memory: SectionMemoryItem[];
+}) => {
+  const metrics = input.scenarioSummary.summary.metrics;
+  const peaks = input.scenarioSummary.summary.peaks;
+  const anomalies = input.scenarioSummary.summary.detectedAnomalies;
+  const previous = input.memory.length > 0 ? input.memory.map((item) => item.title).join(", ") : "onceki bolum yok";
+  const baseLines =
+    input.language === "tr"
+      ? [
+          `## ${input.section.title}`,
+          "",
+          `Bu bolum, **${input.scenarioSummary.scenario.name}** senaryosu icin yerel fallback rapor motoru tarafindan uretilmistir. AI servisi veya dis veri kaynagi gecici olarak kullanilamasa da muhendislik acisindan yorumlanabilir bir teknik iskelet olusturulmustur.`,
+          "",
+          `### Kapsam`,
+          `- Proje: ${input.scenarioSummary.scenario.projectName}`,
+          `- Konum: ${input.scenarioSummary.scenario.location ?? "Belirtilmedi"}`,
+          `- Veri satiri: ${input.scenarioSummary.summary.rowCount}`,
+          `- Zon sayisi: ${input.scenarioSummary.summary.zoneCount}`,
+          `- Onceki baglam: ${previous}`,
+          "",
+          `### Temel Bulgular`,
+          `- Toplam isitma yuku: ${metrics.heatingLoad.sum ?? 0} kWh`,
+          `- Toplam sogutma yuku: ${metrics.coolingLoad.sum ?? 0} kWh`,
+          `- Ortalama ic hava sicakligi: ${metrics.airTemperature.avg ?? "-"} C`,
+          `- Ortalama bagil nem: ${metrics.humidity.avg ?? "-"} %`,
+          `- Pik isitma: ${peaks.heating?.value ?? "-"} ${peaks.heating ? `(${peaks.heating.zoneName})` : ""}`,
+          `- Pik sogutma: ${peaks.cooling?.value ?? "-"} ${peaks.cooling ? `(${peaks.cooling.zoneName})` : ""}`,
+          "",
+          `### Muhendislik Yorumu`,
+          `${input.section.goal} Bu fallback metin, senaryo ozetindeki nicel verileri koruyarak raporun ilerlemesini saglar. Nihai teslim oncesinde AI destekli veya muhendis tarafindan zenginlestirilmis revizyon onerilir.`,
+          "",
+          `### Dikkat Edilmesi Gerekenler`,
+          anomalies.length > 0
+            ? anomalies.map((item) => `- ${item}`).join("\n")
+            : "- Belirgin bir fiziksel anomali tespit edilmedi; yine de orijinal CSV ve model varsayimlari dogrulanmalidir.",
+        ]
+      : [
+          `## ${input.section.title}`,
+          "",
+          `This section was produced by the local fallback report engine for **${input.scenarioSummary.scenario.name}**. Even when the AI service or external data source is temporarily unavailable, the system maintains a technically readable report structure.`,
+          "",
+          `### Scope`,
+          `- Project: ${input.scenarioSummary.scenario.projectName}`,
+          `- Location: ${input.scenarioSummary.scenario.location ?? "Not specified"}`,
+          `- Data rows: ${input.scenarioSummary.summary.rowCount}`,
+          `- Zone count: ${input.scenarioSummary.summary.zoneCount}`,
+          `- Prior context: ${previous}`,
+          "",
+          `### Key Findings`,
+          `- Total heating load: ${metrics.heatingLoad.sum ?? 0} kWh`,
+          `- Total cooling load: ${metrics.coolingLoad.sum ?? 0} kWh`,
+          `- Average indoor air temperature: ${metrics.airTemperature.avg ?? "-"} C`,
+          `- Average relative humidity: ${metrics.humidity.avg ?? "-"} %`,
+          `- Peak heating: ${peaks.heating?.value ?? "-"} ${peaks.heating ? `(${peaks.heating.zoneName})` : ""}`,
+          `- Peak cooling: ${peaks.cooling?.value ?? "-"} ${peaks.cooling ? `(${peaks.cooling.zoneName})` : ""}`,
+          "",
+          `### Engineering Interpretation`,
+          `${input.section.goal} This fallback text keeps the report moving while preserving the quantitative scenario summary. A later AI-assisted or engineer-authored refinement is recommended before final issue.`,
+          "",
+          `### Validation Notes`,
+          anomalies.length > 0
+            ? anomalies.map((item) => `- ${item}`).join("\n")
+            : "- No strong physical anomaly was flagged in the summary, but the original CSV and modelling assumptions should still be verified.",
+        ];
+
+  return {
+    markdown: baseLines.join("\n"),
+    summary:
+      input.language === "tr"
+        ? `${input.section.title} fallback modunda uretildi; enerji, pik yuk ve veri kalitesi bulgulari derlendi.`
+        : `${input.section.title} was generated in fallback mode with summarized energy, peak load, and data-quality findings.`,
+    provider: "fallback",
+    model: "deterministic-template",
+  };
 };
 
 const normalizeSectionRow = (row: Record<string, unknown>): ReportSectionRecord => ({
@@ -148,7 +247,7 @@ export async function generateSequentialReport(input: {
   scenarioSummary: ScenarioSummaryPayload;
   language: "tr" | "en";
 }) {
-  const retrievedContext = formatRetrievedContext(await retrieveRelevantDocuments(input.scenarioSummary, 5));
+  const retrievedContext = await loadRetrievedContext(input.scenarioSummary);
   const memory: Array<{ title: string; summary: string }> = [];
   let provider = "";
   let model = "";
@@ -182,9 +281,8 @@ export async function generateReportSectionsFrom(input: {
   initialMemory: Array<{ title: string; summary: string }>;
   retrievedContext?: string;
 }) {
-  const retrievedContext =
-    input.retrievedContext ?? formatRetrievedContext(await retrieveRelevantDocuments(input.scenarioSummary, 5));
-  const learnedRulesContext = formatLearnedRules(await retrieveLearnedRules(input.scenarioSummary, 5));
+  const retrievedContext = input.retrievedContext ?? (await loadRetrievedContext(input.scenarioSummary));
+  const learnedRulesContext = await loadLearnedRulesContext(input.scenarioSummary);
   const memory = [...input.initialMemory];
   let provider = "";
   let model = "";
@@ -206,24 +304,15 @@ export async function generateReportSectionsFrom(input: {
     });
 
     try {
-      const result = await generateLlmText({
-        systemPrompt:
-          "You produce a single section of a formal engineering report. Respect citations and previous section memory.",
-        userPrompt: buildSectionPrompt({
-          section,
-          language: input.language,
-          scenarioSummary: input.scenarioSummary,
-          retrievedContext,
-          memory,
-          learnedRulesContext,
-        }),
-        responseMimeType: "application/json",
-        temperature: 0.2,
-        maxOutputTokens: 1800,
-        timeoutMs: 45000,
+      const result = await generateSingleReportSection({
+        section,
+        language: input.language,
+        scenarioSummary: input.scenarioSummary,
+        retrievedContext,
+        memory,
+        learnedRulesContext,
       });
-
-      const parsed = parseSectionResponse(result.text);
+      const parsed = { markdown: result.markdown, summary: result.summary };
       provider = result.provider;
       model = result.model;
 
@@ -269,6 +358,52 @@ export async function generateReportSectionsFrom(input: {
     model,
     retrievedContext,
   };
+}
+
+export async function generateSingleReportSection(input: {
+  section: ReportSectionDefinition;
+  language: "tr" | "en";
+  scenarioSummary: ScenarioSummaryPayload;
+  retrievedContext?: string;
+  memory: SectionMemoryItem[];
+  learnedRulesContext?: string;
+}) {
+  const retrievedContext = input.retrievedContext ?? (await loadRetrievedContext(input.scenarioSummary));
+  const learnedRulesContext = input.learnedRulesContext ?? (await loadLearnedRulesContext(input.scenarioSummary));
+
+  try {
+    const result = await generateLlmText({
+      systemPrompt:
+        "You produce a single section of a formal engineering report. Respect citations, prior section memory, and keep the writing detailed and technically grounded.",
+      userPrompt: buildSectionPrompt({
+        section: input.section,
+        language: input.language,
+        scenarioSummary: input.scenarioSummary,
+        retrievedContext,
+        memory: input.memory,
+        learnedRulesContext,
+      }),
+      responseMimeType: "application/json",
+      temperature: 0.2,
+      maxOutputTokens: 2200,
+      timeoutMs: 45000,
+    });
+
+    const parsed = parseSectionResponse(result.text);
+    return {
+      markdown: parsed.markdown,
+      summary: parsed.summary,
+      provider: result.provider,
+      model: result.model,
+    };
+  } catch {
+    return buildFallbackSection({
+      section: input.section,
+      language: input.language,
+      scenarioSummary: input.scenarioSummary,
+      memory: input.memory,
+    });
+  }
 }
 
 export async function listReportSections(input: { scenarioId?: string; reportGroupId?: string }) {

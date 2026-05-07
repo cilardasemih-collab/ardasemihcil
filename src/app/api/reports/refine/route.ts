@@ -3,10 +3,11 @@ import { z } from "zod";
 
 import { generateLlmText } from "@/lib/ai/llmClient";
 import { updateReportSectionContent, listReportSections } from "@/services/reportEngine";
+import { REPORT_SECTION_KEYS } from "@/types/report";
 
 const bodySchema = z.object({
   reportGroupId: z.string().uuid(),
-  sectionKey: z.enum(["project_summary", "envelope_analysis", "energy_and_carbon", "thermal_comfort", "optimization_conclusion"]),
+  sectionKey: z.enum(REPORT_SECTION_KEYS),
   engineerNote: z.string().min(1),
   language: z.enum(["tr", "en"]).default("tr"),
 });

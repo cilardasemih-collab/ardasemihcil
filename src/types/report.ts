@@ -1,9 +1,17 @@
-export type ReportSectionKey =
-  | "project_summary"
-  | "envelope_analysis"
-  | "energy_and_carbon"
-  | "thermal_comfort"
-  | "optimization_conclusion";
+export const REPORT_SECTION_KEYS = [
+  "project_summary",
+  "methodology_and_data_quality",
+  "climate_and_boundary_conditions",
+  "envelope_analysis",
+  "energy_profile",
+  "peak_load_analysis",
+  "carbon_and_cost",
+  "thermal_comfort",
+  "risk_and_anomalies",
+  "optimization_conclusion",
+] as const;
+
+export type ReportSectionKey = (typeof REPORT_SECTION_KEYS)[number];
 
 export type ReportGenerationStatus = "pending" | "generating" | "completed" | "failed";
 
@@ -47,37 +55,72 @@ export const REPORT_SECTION_DEFINITIONS: ReportSectionDefinition[] = [
   {
     key: "project_summary",
     order: 1,
-    title: "Proje Ozeti & Metodoloji",
-    shortLabel: "Proje Ozeti",
-    goal: "Projeyi, veri kapsamını, simulasyon yaklaşımını ve kullanılan metodolojiyi net biçimde açıkla.",
+    title: "Proje Ozeti & Yonetici Ozet",
+    shortLabel: "Yonetici Ozet",
+    goal: "Projenin hedefini, senaryonun amacini ve ana performans sonucunu karar vericiler icin kisa ama teknik bir dille ozetle.",
+  },
+  {
+    key: "methodology_and_data_quality",
+    order: 2,
+    title: "Metodoloji & Veri Kalitesi",
+    shortLabel: "Metodoloji",
+    goal: "Kullanilan veri yapisini, parser varsayimlarini, birim donusumlerini ve veri kalitesi guvenilirligini acikla.",
+  },
+  {
+    key: "climate_and_boundary_conditions",
+    order: 3,
+    title: "Iklim Verisi & Sinir Kosullari",
+    shortLabel: "Iklim",
+    goal: "Konum, iklim bolgesi ve simulasyonu etkileyen sinir kosullarini teknik dayanaklariyla degerlendir.",
   },
   {
     key: "envelope_analysis",
-    order: 2,
+    order: 4,
     title: "Yapi Kabugu Analizi (U-Degerleri)",
     shortLabel: "Yapi Kabugu",
-    goal: "U değerleri, kabuk bileşenleri ve ilgili mevzuat/standart referanslarıyla yapı kabuğu performansını değerlendir.",
+    goal: "U degerleri, kabuk performansi ve ilgili mevzuat/dokuman baglamina gore kabuk davranisini analiz et.",
   },
   {
-    key: "energy_and_carbon",
-    order: 3,
-    title: "Enerji Tuketim & Karbon Salimi",
-    shortLabel: "Enerji & Karbon",
-    goal: "Enerji tüketim özetini, pik yükleri, eğilimleri ve olası karbon etkilerini teknik bir dille özetle.",
+    key: "energy_profile",
+    order: 5,
+    title: "Enerji Tuketim Profili",
+    shortLabel: "Enerji Profili",
+    goal: "Isitma ve sogutma enerji profilini, zon dagilimini ve yillik tuketim egilimlerini detaylandir.",
+  },
+  {
+    key: "peak_load_analysis",
+    order: 6,
+    title: "Pik Yuk & Sistem Davranisi",
+    shortLabel: "Pik Yuk",
+    goal: "Pik isitma ve sogutma yuklerini, kritik zamanlari ve sistem davranisina etkilerini yorumla.",
+  },
+  {
+    key: "carbon_and_cost",
+    order: 7,
+    title: "Karbon Salimi & Isletme Maliyeti",
+    shortLabel: "Karbon & Maliyet",
+    goal: "Karbon etkisini, isletme maliyeti varsayimlarini ve ekonomik okunabilirligi muhendislik diliyle acikla.",
   },
   {
     key: "thermal_comfort",
-    order: 4,
-    title: "Termal Konfor & Risk Analizi",
-    shortLabel: "Konfor & Risk",
-    goal: "Sıcaklık, nem, konfor bandı ve operasyonel/fiziksel riskleri açıkla.",
+    order: 8,
+    title: "Termal Konfor Analizi",
+    shortLabel: "Konfor",
+    goal: "Sicaklik, nem ve kullanici konforu acisindan guclu ve zayif yonleri acikla.",
+  },
+  {
+    key: "risk_and_anomalies",
+    order: 9,
+    title: "Riskler, Anomaliler & Dogrulama Notlari",
+    shortLabel: "Riskler",
+    goal: "Supheli olcumleri, fiziksel tutarsizliklari ve ek dogrulama gerektiren basliklari siniflandir.",
   },
   {
     key: "optimization_conclusion",
-    order: 5,
-    title: "Optimizasyon Onerileri & Sonuc",
+    order: 10,
+    title: "Optimizasyon Onerileri, Yol Haritasi & Sonuc",
     shortLabel: "Sonuc",
-    goal: "Uygulanabilir optimizasyon önerilerini, öncelik sırasını ve mühendislik sonucunu üret.",
+    goal: "Uygulanabilir optimizasyon adimlarini, oncelik sirasini ve nihai muhendislik sonucunu bir yol haritasi halinde sun.",
   },
 ];
 
