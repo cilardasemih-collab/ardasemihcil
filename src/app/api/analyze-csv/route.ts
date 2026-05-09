@@ -17,7 +17,7 @@ import {
 } from "@/utils/processData";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 type AnalyzeCsvBody = {
   filePath?: string;
@@ -309,43 +309,29 @@ export async function POST(request: NextRequest) {
     const oeeSummary = buildOeeSummary(parsedCsv, summary);
     const contributionSummary = buildColumnContributions(parsedCsv, aiResult, 8);
     const anomalies = detectTopAnomalies(parsedCsv, 6);
-    let report = "";
-    try {
-      report = await generateEngineeringReport(summary, { timeoutMs: 45000 });
-    } catch (error) {
-      console.warn("AI engineering report failed, using fallback:", error instanceof Error ? error.message : error);
-      report = buildFallbackEngineeringReport(summary);
-    }
-
-    const actionPlan = await generateOeeActionPlan(
-      { optimizationMethod: summary.optimizationMethod },
-      { timeoutMs: 30000 }
-    );
-    let practiceProblems = "";
-    let advancedInsights = "";
-    try {
-      practiceProblems = await generatePracticeProblems({
+    const [report, actionPlan, practiceProblems, advancedInsights] = await Promise.all([
+      generateEngineeringReport(summary, { timeoutMs: 25000 }).catch((error) => {
+        console.warn("AI engineering report failed, using fallback:", error instanceof Error ? error.message : error);
+        return buildFallbackEngineeringReport(summary);
+      }),
+      generateOeeActionPlan({ optimizationMethod: summary.optimizationMethod }, { timeoutMs: 18000 }),
+      generatePracticeProblems({
         summary,
         oeeSummary,
         diagnosis: aiResult,
         contributions: contributionSummary,
         anomalies,
         parsedCsv,
-      });
-    } catch {
-      practiceProblems =
-        "## Ornek Soru Uretimi\nBu calistirmada otomatik soru-cozum uretimi tamamlanamadi. Mevcut analiz raporlari gecerlidir.";
-    }
-    try {
-      advancedInsights = await generateAdvancedInsights({
+      }).catch(() =>
+        "## Ornek Soru Uretimi\nBu calistirmada otomatik soru-cozum uretimi tamamlanamadi. Mevcut analiz raporlari gecerlidir."
+      ),
+      generateAdvancedInsights({
         summary,
         oeeSummary,
         contributions: contributionSummary,
         anomalies,
-      });
-    } catch {
-      advancedInsights = "### Uzman Notu\nEk AI icgoru bu calistirmada uretilemedi. Mevcut rapor ve metrikler gecerlidir.";
-    }
+      }).catch(() => "### Uzman Notu\nEk AI icgoru bu calistirmada uretilemedi. Mevcut rapor ve metrikler gecerlidir."),
+    ]);
 
     const analysisPayload = {
       summary,

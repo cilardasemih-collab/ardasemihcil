@@ -160,7 +160,12 @@ export default function FileUpload() {
       };
 
       if (!analyzeResponse.ok || !analyzePayload.success) {
-        throw new Error(analyzePayload.error ?? "AI analiz endpoint hatasi.");
+        throw new Error(
+          analyzePayload.error ??
+            (analyzeResponse.status === 503
+              ? "AI analiz servisi gecici olarak mesgul veya zaman asimina ugradi. Birazdan tekrar deneyin."
+              : "AI analiz endpoint hatasi.")
+        );
       }
 
       console.log("[Optimization Summary]", analyzePayload.summary);
