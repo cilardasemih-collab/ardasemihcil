@@ -4,6 +4,16 @@ const nextConfig: NextConfig = {
 	async redirects() {
 		return [
 			{
+				source: "/desingbuilder",
+				destination: "/designbuilder",
+				permanent: false,
+			},
+			{
+				source: "/design-builder",
+				destination: "/designbuilder",
+				permanent: false,
+			},
+			{
 				source: "/qr",
 				destination: "/qr-olusturucu",
 				permanent: false,
