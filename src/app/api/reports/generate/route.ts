@@ -7,7 +7,7 @@ import { buildScenarioSummary } from "@/services/designbuilderScenarioSummary";
 import { generateSequentialReport, initializeReportSections } from "@/services/reportEngine";
 
 export const runtime = "nodejs";
-export const maxDuration = 540; // 9 dakika - 10 bölüm × ~50 saniye per section
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   scenarioId: z.string().uuid(),
