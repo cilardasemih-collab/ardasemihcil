@@ -22,6 +22,9 @@ const sectionPayloadSchema = z.object({
   summary: z.string(),
 });
 
+const SECTION_GENERATION_TIMEOUT_MS = 12000;
+const REPORT_GENERATION_BUDGET_MS = 90000;
+
 type SectionMemoryItem = { title: string; summary: string };
 
 const sectionPromptForLanguage = (language: "tr" | "en") =>
@@ -53,8 +56,8 @@ const buildSectionPrompt = (input: {
     JSON.stringify(input.scenarioSummary, null, 2),
     "Retrieved technical context:",
     input.retrievedContext,
-    "Write this section with enough depth to support a long-form professional report.",
-    "Target roughly 500-900 words, use clear subheadings, short technical paragraphs, bullet lists, tables when helpful, and explicit engineering interpretation.",
+    "Write this section with enough depth to support a professional report without unnecessary verbosity.",
+    "Target roughly 300-500 words, use clear subheadings, short technical paragraphs, bullet lists, tables when helpful, and explicit engineering interpretation.",
   ].join("\n\n");
 };
 
@@ -189,6 +192,27 @@ const parseSectionResponse = (text: string) => {
   return sectionPayloadSchema.parse(JSON.parse(candidate));
 };
 
+const markRemainingSectionsFailed = async (params: {
+  reportGroupId: string;
+  fromSectionKey: ReportSectionKey;
+  message: string;
+}) => {
+  const startIndex = REPORT_SECTION_DEFINITIONS.findIndex((section) => section.key === params.fromSectionKey);
+  if (startIndex < 0) return;
+
+  for (const section of REPORT_SECTION_DEFINITIONS.slice(startIndex)) {
+    await updateSectionRow({
+      reportGroupId: params.reportGroupId,
+      sectionKey: section.key,
+      values: {
+        status: "failed",
+        section_content: "",
+        section_summary: params.message,
+      },
+    });
+  }
+};
+
 async function updateSectionRow(params: {
   reportGroupId: string;
   sectionKey: ReportSectionKey;
@@ -286,6 +310,7 @@ export async function generateReportSectionsFrom(input: {
   const memory = [...input.initialMemory];
   let provider = "";
   let model = "";
+  const startedAt = Date.now();
   const startIndex = REPORT_SECTION_DEFINITIONS.findIndex((section) => section.key === input.startSectionKey);
   const sectionsToGenerate =
     startIndex >= 0 ? REPORT_SECTION_DEFINITIONS.slice(startIndex) : REPORT_SECTION_DEFINITIONS;
@@ -339,6 +364,15 @@ export async function generateReportSectionsFrom(input: {
           },
         },
       });
+
+      if (Date.now() - startedAt > REPORT_GENERATION_BUDGET_MS) {
+        await markRemainingSectionsFailed({
+          reportGroupId: input.reportGroupId,
+          fromSectionKey: section.key,
+          message: "Rapor üretimi zaman sınırını aştı. Kalan bölümler için tekrar deneyin.",
+        });
+        break;
+      }
     } catch (error) {
       await updateSectionRow({
         reportGroupId: input.reportGroupId,
@@ -385,8 +419,8 @@ export async function generateSingleReportSection(input: {
       }),
       responseMimeType: "application/json",
       temperature: 0.2,
-      maxOutputTokens: 2200,
-      timeoutMs: 55000, // Arttırıldı: 45s -> 55s
+      maxOutputTokens: 1200,
+      timeoutMs: SECTION_GENERATION_TIMEOUT_MS,
     });
 
     const parsed = parseSectionResponse(result.text);

@@ -65,8 +65,11 @@ const parseNumber = (value: unknown) => {
 const convertEnergyToKwh = (value: number | null, header: string | null) => {
   if (value === null || !header) return value;
   const normalized = normalizeToken(header);
-  if (normalized.includes("wh") && !normalized.includes("kwh")) return value / 1000;
   if (normalized.includes("mwh")) return value * 1000;
+  if (normalized.includes("kwh")) return value;
+  if (normalized.includes("kbtu")) return value * 0.293071;
+  if (normalized.includes("btu")) return value * 0.000293071;
+  if (normalized.includes("wh")) return value / 1000;
   return value;
 };
 

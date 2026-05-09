@@ -150,6 +150,7 @@ export function aggregateScenarioOptimization(input: {
   const baseline = [...input.scenarios].sort(
     (a, b) => (a.costEstimate ?? 0) - (b.costEstimate ?? 0)
   )[0];
+  const baselineScenarioId = baseline.summary.scenario.id;
 
   const floorAreas = input.scenarios
     .map((item) => {
@@ -173,8 +174,8 @@ export function aggregateScenarioOptimization(input: {
     const baselineOpex = (baselineEnergy * currency.electricityRatePerKwh) + (baselineEnergy * CARBON_FACTOR_KG_PER_KWH * currency.carbonCostPerKg);
     
     const deltaCapex = capex - baselineCapex;
-    const deltaOpex = annualOpexEstimate - baselineOpex;
-    const roiYears = deltaCapex > 0 && deltaOpex > 0 ? round(deltaCapex / deltaOpex, 2) : (deltaCapex <= 0 ? 0 : null);
+    const annualSavings = baselineOpex - annualOpexEstimate;
+    const roiYears = deltaCapex > 0 && annualSavings > 0 ? round(deltaCapex / annualSavings, 2) : (deltaCapex <= 0 ? 0 : null);
     
     const comfortPenalty = computeComfortPenalty(summary.summary);
     const comfortScore = Math.max(0, round(100 - comfortPenalty, 2));
@@ -236,7 +237,10 @@ export function aggregateScenarioOptimization(input: {
     };
   });
 
-  return dossiers.sort((a, b) => b.finalScore - a.finalScore);
+  return {
+    baselineScenarioId,
+    dossiers: dossiers.sort((a, b) => b.finalScore - a.finalScore),
+  };
 }
 
 export async function buildOptimizationDecision(input: {
@@ -248,7 +252,7 @@ export async function buildOptimizationDecision(input: {
   currency?: CurrencyConfig;
 }): Promise<OptimizationComparisonResult> {
   const currency = input.currency ?? CURRENCY_PRESETS.TRY;
-  const scenarios = aggregateScenarioOptimization({ scenarios: input.scenarios, currency });
+  const { baselineScenarioId, dossiers: scenarios } = aggregateScenarioOptimization({ scenarios: input.scenarios, currency });
   const winner = scenarios[0];
   const latexTable = buildLatexTable(scenarios);
   const fallbackSummary =
@@ -281,7 +285,7 @@ export async function buildOptimizationDecision(input: {
   }
 
   return {
-    baselineScenarioId: scenarios[scenarios.length - 1].scenarioId,
+    baselineScenarioId,
     winner,
     scenarios,
     latexTable,

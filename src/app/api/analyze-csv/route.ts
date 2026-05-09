@@ -129,6 +129,43 @@ const sanitizeJsonText = (raw: string): string => {
   return withoutFence;
 };
 
+const normalizeHeader = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const looksNumeric = (value: string): boolean => {
+  const normalized = value
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/\.(?=\d{3}(\D|$))/g, "")
+    .replace(/,(?=\d{3}(\D|$))/g, "")
+    .replace(",", ".");
+
+  return normalized.length > 0 && Number.isFinite(Number(normalized));
+};
+
+const buildFallbackDiagnosis = (preview: CsvPreview): AiDiagnosis => {
+  const energyKeywords = ["energy", "consumption", "power", "motor", "kw", "kwh", "enerji", "tuketim", "guc"];
+  const numericColumns = preview.headers.filter((header) =>
+    preview.firstFiveRows.some((row) => looksNumeric(row[header] ?? ""))
+  );
+  const energyColumns = numericColumns.filter((header) => {
+    const normalized = normalizeHeader(header);
+    return energyKeywords.some((keyword) => normalized.includes(keyword));
+  });
+  const hedefKolonlar = (energyColumns.length > 0 ? energyColumns : numericColumns).slice(0, 6);
+
+  return {
+    tespit:
+      hedefKolonlar.length > 0
+        ? "AI yaniti gecerli JSON formatinda donmedigi icin sayisal veri kolonlari uzerinden otomatik enerji verimliligi tespiti yapildi."
+        : "AI yaniti gecerli JSON formatinda donmedigi icin genel operasyonel verimlilik tespiti yapildi.",
+    hedef_kolonlar: hedefKolonlar,
+    matematiksel_islem_talimati:
+      hedefKolonlar.length > 0
+        ? "Belirlenen sayisal tuketim/performans kolonlarina %20 azaltim senaryosu uygula; mevcut toplam ile optimize toplam arasindaki farki tasarruf olarak hesapla."
+        : "Uygun sayisal hedef kolon bulunamazsa veri kalitesini raporla ve operasyonel iyilestirme icin %20 verimlilik varsayimi kullan.",
+  };
+};
+
 const parseDiagnosisJson = async (rawJson: string): Promise<AiDiagnosis> => {
   const candidates = [rawJson, sanitizeJsonText(rawJson)];
 
@@ -194,19 +231,27 @@ const callGeminiForDiagnosis = async (preview: CsvPreview): Promise<AiDiagnosis>
     first_five_rows: preview.firstFiveRows,
   };
 
-  const { text: rawJson } = await generateGeminiText({
-    prompt: `${buildSystemPrompt()}\n\nVERI OZETI:\n${JSON.stringify(userPayload, null, 2)}`,
-    responseMimeType: "application/json",
-    temperature: 0.1,
-    maxOutputTokens: 700,
-    timeoutMs: 30000,
-  });
+  try {
+    const { text: rawJson } = await generateGeminiText({
+      prompt: `${buildSystemPrompt()}\n\nVERI OZETI:\n${JSON.stringify(userPayload, null, 2)}`,
+      responseMimeType: "application/json",
+      temperature: 0.1,
+      maxOutputTokens: 700,
+      timeoutMs: 30000,
+    });
 
-  if (!rawJson) {
-    throw new Error("AI bos yanit dondu.");
+    if (!rawJson) {
+      throw new Error("AI bos yanit dondu.");
+    }
+
+    return await parseDiagnosisJson(rawJson);
+  } catch (error) {
+    console.warn(
+      "AI diagnosis failed, using deterministic CSV fallback:",
+      error instanceof Error ? error.message : error
+    );
+    return buildFallbackDiagnosis(preview);
   }
-
-  return parseDiagnosisJson(rawJson);
 };
 
 export async function POST(request: NextRequest) {
