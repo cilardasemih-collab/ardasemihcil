@@ -166,6 +166,24 @@ const buildFallbackDiagnosis = (preview: CsvPreview): AiDiagnosis => {
   };
 };
 
+const buildFallbackEngineeringReport = (summary: ReturnType<typeof buildOptimizationSummary>) => {
+  return [
+    "## Enerji Tasarruf Analizi Raporu",
+    "",
+    "### Mevcut Durum",
+    `${summary.rowCount} satirlik veri seti uzerinden mevcut toplam enerji tuketimi ${summary.oldTotalEnergy} olarak hesaplandi.`,
+    "",
+    "### Uygulanan Optimizasyon",
+    summary.optimizationMethod,
+    "",
+    "### Sayisal Kazanim",
+    `Optimize senaryoda yeni toplam enerji ${summary.newTotalEnergy}, hesaplanan tasarruf ise ${summary.energySaved} seviyesindedir.`,
+    "",
+    "### Not",
+    "AI rapor metni bu calistirmada tamamlanamadigi icin teknik ozet deterministik fallback olarak uretilmistir.",
+  ].join("\n");
+};
+
 const parseDiagnosisJson = async (rawJson: string): Promise<AiDiagnosis> => {
   const candidates = [rawJson, sanitizeJsonText(rawJson)];
 
@@ -291,7 +309,14 @@ export async function POST(request: NextRequest) {
     const oeeSummary = buildOeeSummary(parsedCsv, summary);
     const contributionSummary = buildColumnContributions(parsedCsv, aiResult, 8);
     const anomalies = detectTopAnomalies(parsedCsv, 6);
-    const report = await generateEngineeringReport(summary, { timeoutMs: 45000 });
+    let report = "";
+    try {
+      report = await generateEngineeringReport(summary, { timeoutMs: 45000 });
+    } catch (error) {
+      console.warn("AI engineering report failed, using fallback:", error instanceof Error ? error.message : error);
+      report = buildFallbackEngineeringReport(summary);
+    }
+
     const actionPlan = await generateOeeActionPlan(
       { optimizationMethod: summary.optimizationMethod },
       { timeoutMs: 30000 }

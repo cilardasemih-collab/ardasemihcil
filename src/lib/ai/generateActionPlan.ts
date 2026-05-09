@@ -20,33 +20,56 @@ const buildPrompt = (input: GenerateActionPlanInput): string => {
   ].join("\n");
 };
 
+const sanitizeJsonText = (raw: string) => {
+  const withoutFence = raw
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const start = withoutFence.indexOf("[");
+  const end = withoutFence.lastIndexOf("]");
+  return start >= 0 && end > start ? withoutFence.slice(start, end + 1) : withoutFence;
+};
+
+const fallbackActionPlan = (optimizationMethod: string) => [
+  `Uygulanan optimizasyon yontemini periyodik KPI takibine bagla: ${optimizationMethod}`,
+  "Enerji tuketimi yuksek ekipmanlar icin vardiya bazli izleme ve alarm esikleri tanimla.",
+  "Bakim, kalite ve uretim ekipleriyle haftalik OEE kayip analizi toplantisi planla.",
+];
+
 export const generateOeeActionPlan = async (
   input: GenerateActionPlanInput,
   options?: GenerateActionPlanOptions
 ): Promise<string[]> => {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-  const { text: rawJson } = await generateGeminiText({
-    prompt: buildPrompt(input),
-    responseMimeType: "application/json",
-    temperature: 0.25,
-    maxOutputTokens: 350,
-    timeoutMs,
-  });
+  try {
+    const { text: rawJson } = await generateGeminiText({
+      prompt: buildPrompt(input),
+      responseMimeType: "application/json",
+      temperature: 0.25,
+      maxOutputTokens: 350,
+      timeoutMs,
+    });
 
-  if (!rawJson) {
-    throw new Error("AI OEE tavsiye yaniti bos dondu.");
+    if (!rawJson) {
+      throw new Error("AI OEE tavsiye yaniti bos dondu.");
+    }
+
+    const parsed = JSON.parse(sanitizeJsonText(rawJson)) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error("AI OEE tavsiye yaniti beklenen formatta degil.");
+    }
+
+    const normalized = parsed.map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
+    if (normalized.length === 0) {
+      throw new Error("AI OEE tavsiye listesi bos dondu.");
+    }
+
+    return normalized;
+  } catch (error) {
+    console.warn("AI OEE action plan failed, using fallback:", error instanceof Error ? error.message : error);
+    return fallbackActionPlan(input.optimizationMethod);
   }
-
-  const parsed = JSON.parse(rawJson) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error("AI OEE tavsiye yaniti beklenen formatta degil.");
-  }
-
-  const normalized = parsed.map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
-  if (normalized.length === 0) {
-    throw new Error("AI OEE tavsiye listesi bos dondu.");
-  }
-
-  return normalized;
 };
