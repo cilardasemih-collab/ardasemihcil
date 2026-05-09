@@ -62,6 +62,37 @@ const parseNumber = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const parseCsvTimestamp = (value: unknown, rowIndex: number) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value !== "string") return new Date(Date.UTC(2026, 0, 1, rowIndex));
+
+  const raw = value.trim();
+  if (!raw) return new Date(Date.UTC(2026, 0, 1, rowIndex));
+
+  const nativeParsed = new Date(raw);
+  if (!Number.isNaN(nativeParsed.getTime())) return nativeParsed;
+
+  const normalized = raw.replace(/\//g, ".").replace("T", " ").replace(/\s+/g, " ");
+  const match = normalized.match(
+    /^(\d{1,2})[.](\d{1,2})(?:[.](\d{2,4}))?(?:\s+(\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?)?$/
+  );
+
+  if (!match) return new Date(Date.UTC(2026, 0, 1, rowIndex));
+
+  const [, firstStr, secondStr, yearStr, hourStr = "0", minuteStr = "0", secondPartStr = "0"] = match;
+  const year = yearStr ? (yearStr.length === 2 ? Number(`20${yearStr}`) : Number(yearStr)) : 2026;
+  const first = Number(firstStr);
+  const second = Number(secondStr);
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  const secondPart = Number(secondPartStr);
+  const month = first > 12 ? second - 1 : first - 1;
+  const day = first > 12 ? first : second;
+  const parsed = new Date(year, month, day, hour, minute, secondPart);
+
+  return Number.isNaN(parsed.getTime()) ? new Date(Date.UTC(2026, 0, 1, rowIndex)) : parsed;
+};
+
 const convertEnergyToKwh = (value: number | null, header: string | null) => {
   if (value === null || !header) return value;
   const normalized = normalizeToken(header);
@@ -92,13 +123,13 @@ const resolveHeaderMapping = (headers: string[]): HeaderMapping => {
   };
 };
 
-const normalizeRow = (row: Record<string, unknown>, headerMapping: HeaderMapping, scenarioId: string) => {
+const normalizeRow = (row: Record<string, unknown>, headerMapping: HeaderMapping, scenarioId: string, rowIndex: number) => {
   const timestampValue = headerMapping.timestamp ? row[headerMapping.timestamp] : null;
   const zoneValue = headerMapping.zone_name ? row[headerMapping.zone_name] : null;
 
   return simulationDataInsertSchema.parse({
     scenario_id: scenarioId,
-    timestamp: typeof timestampValue === "string" || timestampValue instanceof Date ? timestampValue : new Date(),
+    timestamp: parseCsvTimestamp(timestampValue, rowIndex),
     zone_name: typeof zoneValue === "string" && zoneValue.trim() ? zoneValue.trim() : "Undefined Zone",
     air_temperature: parseNumber(headerMapping.air_temperature ? row[headerMapping.air_temperature] : null),
     heating_load: convertEnergyToKwh(
@@ -140,7 +171,7 @@ export function parseSimulationCsvFile(file: File, options: ParseOptions): Promi
           if (!rawRow || Object.keys(rawRow).length === 0) continue;
 
           try {
-            const normalized = normalizeRow(rawRow, headerMapping, options.scenarioId);
+            const normalized = normalizeRow(rawRow, headerMapping, options.scenarioId, processedRows);
             rows.push(normalized);
             processedRows += 1;
 

@@ -327,6 +327,21 @@ export default function DesignBuilderWorkspace() {
     }
   };
 
+  const ensureScenarioSynced = async (scenario: Scenario) => {
+    if (syncedScenarioIds[scenario.id]) return;
+
+    const project = projects.find((item) => item.id === scenario.project_id);
+    const rows = scenarioRowsById[scenario.id];
+    if (!project || !rows?.length) {
+      throw new Error(`${scenario.name} icin yerel veri bulunamadi; dosyayi tekrar yukle.`);
+    }
+
+    appendLog(`${scenario.name} rapor oncesi Supabase'e tekrar senkronlanıyor.`);
+    await persistScenario(project, scenario, rows);
+    setSyncedScenarioIds((prev) => ({ ...prev, [scenario.id]: true }));
+    appendLog(`${scenario.name} senkronu tamamlandi, rapora geciliyor.`);
+  };
+
   const handleFile = async (file: File) => {
     if (!selectedProject) {
       setUploadState("error");
@@ -528,7 +543,6 @@ export default function DesignBuilderWorkspace() {
     setIsOptimizing(true);
     setOptimizationError("");
     setOptimizationResult(null);
-    setActiveStep("comparison");
     appendLog("Karsilastirma raporu icin tamamlanmis raporlar okunuyor.");
 
     try {
@@ -575,8 +589,11 @@ export default function DesignBuilderWorkspace() {
         currency: payload.currency,
       });
       appendLog("Karsilastirma raporu tamamlandi.");
+      setActiveStep("comparison");
     } catch (error) {
-      setOptimizationError(error instanceof Error ? error.message : "Karsilastirma raporu uretilemedi.");
+      const message = error instanceof Error ? error.message : "Karsilastirma raporu uretilemedi.";
+      setOptimizationError(message);
+      appendLog(`Karsilastirma raporu durdu: ${message}`);
     } finally {
       setIsOptimizing(false);
     }
@@ -596,9 +613,7 @@ export default function DesignBuilderWorkspace() {
     try {
       const scenarioIds: string[] = [];
       for (const scenario of [...projectScenarios].reverse()) {
-        if (!syncedScenarioIds[scenario.id]) {
-          throw new Error(`${scenario.name} Supabase'e senkronlanmadan raporlanamaz.`);
-        }
+        await ensureScenarioSynced(scenario);
         if (reportStatusByScenarioId[scenario.id] !== "completed") {
           await generateReportForScenario(scenario);
         }
@@ -649,6 +664,12 @@ export default function DesignBuilderWorkspace() {
   };
 
   const completedReportCount = projectScenarios.filter((scenario) => reportStatusByScenarioId[scenario.id] === "completed").length;
+  const canOpenStep = (step: WizardStep) => {
+    if (step === "project") return true;
+    if (step === "upload") return Boolean(selectedProject);
+    if (step === "preview" || step === "reports") return projectScenarios.length > 0;
+    return reportsReady && Boolean(optimizationResult);
+  };
 
   return (
     <section className="space-y-5">
@@ -656,13 +677,21 @@ export default function DesignBuilderWorkspace() {
         <div className="grid gap-2 md:grid-cols-5">
           {stepDefinitions.map((step) => {
             const isActive = step.key === activeStep;
+            const isDisabled = !canOpenStep(step.key);
             return (
               <button
                 key={step.key}
                 type="button"
-                onClick={() => setActiveStep(step.key)}
+                disabled={isDisabled}
+                onClick={() => {
+                  if (!isDisabled) setActiveStep(step.key);
+                }}
                 className={`rounded-xl border px-3 py-3 text-left transition ${
-                  isActive ? "border-emerald-400 bg-emerald-50" : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                  isActive
+                    ? "border-emerald-400 bg-emerald-50"
+                    : isDisabled
+                      ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-60"
+                      : "border-slate-200 bg-slate-50 hover:bg-slate-100"
                 }`}
               >
                 <p className="text-xs font-black text-slate-900">{step.label}</p>
@@ -748,7 +777,11 @@ export default function DesignBuilderWorkspace() {
                 {uploadState === "parsing" ? <Loader2 className="h-6 w-6 animate-spin" /> : <FileSpreadsheet className="h-6 w-6" />}
               </div>
               <p className="mt-4 text-lg font-black text-slate-900">CSV dosyalarini buraya birak</p>
-              <p className="mt-2 text-sm text-slate-600">{selectedProject ? `${selectedProject.name} projesine islenecek.` : "Once proje sec."}</p>
+              <p className="mt-2 text-sm text-slate-600">
+                {selectedProject
+                  ? `${selectedProject.name} projesine 2'den fazla CSV dosyasi ayni anda eklenebilir.`
+                  : "Once proje sec."}
+              </p>
             </div>
 
             <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -779,7 +812,9 @@ export default function DesignBuilderWorkspace() {
                   <BarChart3 className="h-5 w-5 text-violet-700" />
                   <div>
                     <p className="text-sm font-black text-slate-900">Grafikli Onizleme</p>
-                    <p className="text-xs text-slate-500">Raporlamadan once dosya icini ve enerji dagilimini kontrol et.</p>
+                    <p className="text-xs text-slate-500">
+                      Enerji grafigi yuklenen tum dosyalari karsilastirir; satir onizleme secili dosyayi gosterir.
+                    </p>
                   </div>
                 </div>
                 <select
@@ -836,6 +871,9 @@ export default function DesignBuilderWorkspace() {
                         <p className="text-sm font-black text-slate-900">{scenario.name}</p>
                         <p className="mt-1 text-xs text-slate-600">Satir: {scenarioRowsById[scenario.id]?.length ?? 0}</p>
                         <p className="mt-1 text-xs text-slate-600">Enerji: {numberFmt(scenario.total_energy_consumption)}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-600">
+                          DB: {syncedScenarioIds[scenario.id] ? "Senkron" : "Rapor oncesi tekrar denenecek"}
+                        </p>
                       </div>
                       <button type="button" onClick={() => removeScenario(scenario.id)} className="text-rose-600">
                         <Trash2 className="h-4 w-4" />
@@ -863,7 +901,11 @@ export default function DesignBuilderWorkspace() {
                 <Database className="h-5 w-5 text-violet-700" />
                 <div>
                   <p className="text-sm font-black text-slate-900">Satir Onizleme</p>
-                  <p className="text-xs text-slate-500">Secili dosyanin normalize ilk satirlari</p>
+                  <p className="text-xs text-slate-500">
+                    {selectedPreviewScenario
+                      ? `${selectedPreviewScenario.name} dosyasinin normalize ilk satirlari`
+                      : "Secili dosyanin normalize ilk satirlari"}
+                  </p>
                 </div>
               </div>
               <div className="max-h-[520px] overflow-auto rounded-2xl border border-slate-200">
@@ -928,6 +970,11 @@ export default function DesignBuilderWorkspace() {
                   {workflowLog.length === 0 ? <p>Henuz akis baslatilmadi.</p> : workflowLog.map((line) => <p key={line}>{line}</p>)}
                 </div>
               </div>
+              {optimizationError ? (
+                <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                  {optimizationError}
+                </p>
+              ) : null}
             </CardContent>
           </Card>
 
