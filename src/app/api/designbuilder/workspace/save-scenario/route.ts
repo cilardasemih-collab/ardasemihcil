@@ -19,12 +19,14 @@ const formatInfraError = (error: unknown) => {
   const message = error instanceof Error ? error.message : "Scenario kaydi sirasinda beklenmeyen hata.";
   const normalized = message.toLowerCase();
 
+  if (normalized.includes("supabasekey") || normalized.includes("service role") || normalized.includes("required")) {
+    return "Supabase server anahtari eksik veya gecersiz. Vercel ortaminda SUPABASE_SERVICE_ROLE_KEY tanimli olmali.";
+  }
+
   if (
     normalized.includes("relation") ||
     normalized.includes("does not exist") ||
-    normalized.includes("schema cache") ||
-    normalized.includes("service role") ||
-    normalized.includes("supabase")
+    normalized.includes("schema cache")
   ) {
     return "Supabase tabloları henuz hazir degil. Senaryo yerel olarak tutuldu; veritabani senkronu migration push sonrasi aktif olacak.";
   }
@@ -43,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     const project = {
       id: parsed.id,
-      user_id: parsed.user_id,
+      user_id: null,
       name: parsed.name,
       location: parsed.location ?? null,
       climate_data: parsed.climate_data,

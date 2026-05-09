@@ -362,6 +362,9 @@ export default function DesignBuilderWorkspace() {
       onProgress: setProgressValue,
       onPreviewRows: setPreviewRows,
     });
+    if (result.rows.length === 0) {
+      throw new Error(`${file.name} icinde raporlanabilir satir bulunamadi.`);
+    }
     const totalEnergyConsumption = result.rows.reduce((sum, row) => sum + (row.heating_load ?? 0) + (row.cooling_load ?? 0), 0);
     const scenario: Scenario = {
       id: scenarioId,
@@ -380,10 +383,12 @@ export default function DesignBuilderWorkspace() {
       setSyncedScenarioIds((prev) => ({ ...prev, [scenarioId]: true }));
       appendLog(`${scenario.name} Supabase'e senkronlandi.`);
     } catch (error) {
+      const message = error instanceof Error ? `DB senkronu basarisiz: ${error.message}` : "DB senkronu basarisiz.";
       setWarnings((prev) => [
         ...prev,
-        error instanceof Error ? `DB senkronu basarisiz: ${error.message}` : "DB senkronu basarisiz.",
+        message,
       ]);
+      throw new Error(message);
     }
   };
 
@@ -830,10 +835,10 @@ export default function DesignBuilderWorkspace() {
                 </select>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Senaryo Enerji Dagilimi</p>
-                  <div className="h-72">
+                  <div className="h-72 min-h-[288px] min-w-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={scenarioEnergyData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -845,9 +850,9 @@ export default function DesignBuilderWorkspace() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Ilk 60 Satir Trendi</p>
-                  <div className="h-72">
+                  <div className="h-72 min-h-[288px] min-w-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={previewChartData}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
