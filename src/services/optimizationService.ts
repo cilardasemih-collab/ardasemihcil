@@ -25,6 +25,7 @@ export type OptimizationScenarioDossier = {
     cooling: number;
     total: number;
   }>;
+  reportExcerpt: string | null;
   latexTableRow: string;
   explanation: string[];
 };
@@ -121,6 +122,9 @@ const buildStrategistPrompt = (dossiers: OptimizationScenarioDossier[], latexTab
       ? "Aşağıdaki senaryo künyelerini kıyasla ve en iyi senaryoyu seç."
       : "Compare the following scenario dossiers and select the best scenario.",
     language === "tr"
+      ? "Kararı sadece ham metriklerden değil, her senaryo için üretilmiş teknik rapor özetlerinden de kanıt alarak ver."
+      : "Base the decision not only on raw metrics, but also on the generated technical report excerpts for each scenario.",
+    language === "tr"
       ? "Yanıtında teknik, ekonomik, karbon ve konfor açısından neden bu senaryonun seçildiğini açıkla."
       : "Explain why the chosen scenario wins from technical, economic, carbon, and comfort perspectives.",
     language === "tr"
@@ -137,6 +141,7 @@ export function aggregateScenarioOptimization(input: {
   scenarios: Array<{
     summary: ScenarioSummaryPayload;
     costEstimate: number | null;
+    reportMarkdown?: string | null;
   }>;
   currency?: CurrencyConfig;
 }) {
@@ -162,7 +167,7 @@ export function aggregateScenarioOptimization(input: {
 
   const fallbackArea = floorAreas.length > 0 ? floorAreas[0] : null;
 
-  const raw = input.scenarios.map(({ summary, costEstimate }) => {
+  const raw = input.scenarios.map(({ summary, costEstimate, reportMarkdown }) => {
     const annualEnergyKwh = summary.scenario.totalEnergyConsumption ?? (summary.summary.metrics.heatingLoad.sum ?? 0) + (summary.summary.metrics.coolingLoad.sum ?? 0);
     const annualCarbonKg = annualEnergyKwh * CARBON_FACTOR_KG_PER_KWH;
     const annualCarbonCost = annualCarbonKg * currency.carbonCostPerKg;
@@ -200,6 +205,7 @@ export function aggregateScenarioOptimization(input: {
       intensityScore: 0,
       finalScore: 0,
       monthlyTrend,
+      reportExcerpt: reportMarkdown ? reportMarkdown.replace(/\s+/g, " ").trim().slice(0, 1200) : null,
       latexTableRow: "",
       explanation: [],
     } satisfies OptimizationScenarioDossier;
@@ -247,6 +253,7 @@ export async function buildOptimizationDecision(input: {
   scenarios: Array<{
     summary: ScenarioSummaryPayload;
     costEstimate: number | null;
+    reportMarkdown?: string | null;
   }>;
   language: "tr" | "en";
   currency?: CurrencyConfig;

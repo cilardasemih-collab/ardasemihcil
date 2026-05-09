@@ -18,6 +18,7 @@ const bodySchema = z.object({
       z.object({
         summary: z.custom<ScenarioSummaryPayload>(),
         costEstimate: z.number().nullable(),
+        reportMarkdown: z.string().optional().nullable(),
       })
     )
     .default([]),
@@ -117,6 +118,7 @@ export async function POST(request: NextRequest) {
           summaries.push({
             summary,
             costEstimate: scenario.cost_estimate,
+            reportMarkdown: null,
           });
         }
       } catch (error) {

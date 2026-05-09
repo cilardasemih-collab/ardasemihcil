@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createServiceClient } from "@/lib/supabase/server";
@@ -97,15 +97,13 @@ export async function POST(request: NextRequest) {
       reportTitle,
     });
 
-    // Start report generation asynchronously
-    generateSequentialReport({
+    after(() => generateSequentialReport({
       reportGroupId: body.reportGroupId,
       scenarioSummary,
       language: body.language,
     }).catch((error) => {
       console.error("Background report generation error:", error);
-      // Log error to database if needed
-    });
+    }));
 
     // Return immediately with sections being generated in background
     return NextResponse.json({

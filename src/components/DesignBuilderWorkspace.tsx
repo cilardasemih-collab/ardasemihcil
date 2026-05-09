@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { Bot, Database, FileSpreadsheet, FileText, FolderKanban, Loader2, Trash2, UploadCloud } from "lucide-react";
 
 import AiStatusTerminal from "@/components/AiStatusTerminal";
@@ -24,7 +24,7 @@ import {
 } from "@/lib/designbuilder/workspaceTypes";
 import { buildScenarioSummary } from "@/services/designbuilderScenarioSummary";
 import type { OptimizationComparisonResult } from "@/services/optimizationService";
-import type { ReportSectionRecord } from "@/types/report";
+import { REPORT_SECTION_DEFINITIONS, type ReportSectionRecord } from "@/types/report";
 
 const seedProjects: Project[] = [
   {
@@ -58,6 +58,7 @@ const seedScenarios: Scenario[] = [
 ];
 
 type UploadState = "idle" | "parsing" | "done" | "error";
+type ReportRunStatus = "idle" | "generating" | "completed" | "failed";
 type TerminalTrace = {
   stage: "preprocess" | "analyst" | "auditor" | "reporter" | "completed";
   message: string;
@@ -119,6 +120,8 @@ export default function DesignBuilderWorkspace() {
   const [activeReportGroupId, setActiveReportGroupId] = useState("");
   const [activeReportTitle, setActiveReportTitle] = useState("");
   const [reportScenarioId, setReportScenarioId] = useState("");
+  const [reportGroupByScenarioId, setReportGroupByScenarioId] = useState<Record<string, string>>({});
+  const [reportStatusByScenarioId, setReportStatusByScenarioId] = useState<Record<string, ReportRunStatus>>({});
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportError, setReportError] = useState("");
   const [selectedOptimizationIds, setSelectedOptimizationIds] = useState<string[]>([]);
@@ -137,6 +140,22 @@ export default function DesignBuilderWorkspace() {
     () => scenarios.filter((scenario) => scenario.project_id === selectedProjectId),
     [scenarios, selectedProjectId]
   );
+
+  const selectedReportsReady = useMemo(
+    () =>
+      selectedOptimizationIds.length >= 2 &&
+      selectedOptimizationIds.every((scenarioId) => reportStatusByScenarioId[scenarioId] === "completed"),
+    [reportStatusByScenarioId, selectedOptimizationIds]
+  );
+
+  const optimizationBlockReason = useMemo(() => {
+    if (selectedOptimizationIds.length < 2) return "Karsilastirma icin en az iki scenario sec.";
+    const missingCount = selectedOptimizationIds.filter((scenarioId) => reportStatusByScenarioId[scenarioId] !== "completed").length;
+    if (missingCount > 0) {
+      return `Optimizasyon icin secili ${missingCount} senaryonun raporu tamamlanmali.`;
+    }
+    return "";
+  }, [reportStatusByScenarioId, selectedOptimizationIds]);
 
   useEffect(() => {
     setSelectedOptimizationIds((prev) => prev.filter((id) => projectScenarios.some((scenario) => scenario.id === id)));
@@ -230,7 +249,7 @@ export default function DesignBuilderWorkspace() {
     }
   }, [projects, selectedProjectId]);
 
-  const pollReportSections = async (reportGroupId: string) => {
+  const pollReportSections = useCallback(async (reportGroupId: string, scenarioId = reportScenarioId) => {
     const response = await fetch(`/api/reports?reportGroupId=${encodeURIComponent(reportGroupId)}`, {
       cache: "no-store",
     });
@@ -247,14 +266,22 @@ export default function DesignBuilderWorkspace() {
     const sections = Array.isArray(payload.sections) ? payload.sections : [];
     setReportSections(sections);
 
-    // Tüm sections completed veya failed olunca, generating'i durdur
-    if (sections.length > 0) {
-      const allFinished = sections.every((s) => s.status === "completed" || s.status === "failed");
+    if (sections.length > 0 && scenarioId) {
+      const allCompleted =
+        sections.length === REPORT_SECTION_DEFINITIONS.length &&
+        sections.every((section) => section.status === "completed");
+      const allFinished = sections.every((section) => section.status === "completed" || section.status === "failed");
+
+      setReportStatusByScenarioId((prev) => ({
+        ...prev,
+        [scenarioId]: allCompleted ? "completed" : allFinished ? "failed" : "generating",
+      }));
+
       if (allFinished) {
         setIsGeneratingReport(false);
       }
     }
-  };
+  }, [reportScenarioId]);
 
   useEffect(() => {
     if (!activeReportGroupId || !isGeneratingReport) return;
@@ -266,7 +293,7 @@ export default function DesignBuilderWorkspace() {
     }, 1000); // Arttırıldı poll hızı: 2s -> 1s
 
     return () => window.clearInterval(interval);
-  }, [activeReportGroupId, isGeneratingReport]);
+  }, [activeReportGroupId, isGeneratingReport, pollReportSections]);
 
   const handleCreateProject = () => {
     const parsed: ProjectInsert = projectInsertSchema.parse({
@@ -296,6 +323,16 @@ export default function DesignBuilderWorkspace() {
       return next;
     });
     setSyncedScenarioIds((prev) => {
+      const next = { ...prev };
+      delete next[scenarioId];
+      return next;
+    });
+    setReportGroupByScenarioId((prev) => {
+      const next = { ...prev };
+      delete next[scenarioId];
+      return next;
+    });
+    setReportStatusByScenarioId((prev) => {
       const next = { ...prev };
       delete next[scenarioId];
       return next;
@@ -474,6 +511,8 @@ export default function DesignBuilderWorkspace() {
         : `${selectedProject?.name ?? "Project"} - DesignBuilder Technical Report`
     );
     setReportScenarioId(scenario.id);
+    setReportGroupByScenarioId((prev) => ({ ...prev, [scenario.id]: reportGroupId }));
+    setReportStatusByScenarioId((prev) => ({ ...prev, [scenario.id]: "generating" }));
     setReportSections([]);
     setReportError("");
     setIsGeneratingReport(true);
@@ -502,13 +541,38 @@ export default function DesignBuilderWorkspace() {
 
       setActiveReportTitle(payload.reportTitle ?? activeReportTitle);
       // Ilk poll için sections'ı getir
-      await pollReportSections(reportGroupId);
+      await pollReportSections(reportGroupId, scenario.id);
       // isGeneratingReport polling loop tarafından kontrol edilecek
     } catch (error) {
       setReportError(error instanceof Error ? error.message : "Rapor olusturulamadi.");
+      setReportStatusByScenarioId((prev) => ({ ...prev, [scenario.id]: "failed" }));
       setIsGeneratingReport(false);
     }
   };
+
+  const fetchReportSections = async (reportGroupId: string) => {
+    const response = await fetch(`/api/reports?reportGroupId=${encodeURIComponent(reportGroupId)}`, {
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      success?: boolean;
+      sections?: ReportSectionRecord[];
+      error?: string;
+    };
+
+    if (!response.ok || !payload.success || !Array.isArray(payload.sections)) {
+      throw new Error(payload.error ?? "Rapor bolumleri okunamadi.");
+    }
+
+    return payload.sections;
+  };
+
+  const buildReportMarkdown = (sections: ReportSectionRecord[]) =>
+    [...sections]
+      .sort((a, b) => a.sectionOrder - b.sectionOrder)
+      .filter((section) => section.status === "completed" && section.sectionContent.trim())
+      .map((section) => `## ${section.sectionTitle}\n\n${section.sectionContent}`)
+      .join("\n\n");
 
   const regenerateReportSection = async (sectionKey: ReportSectionRecord["sectionKey"]) => {
     if (!activeReportGroupId || !reportScenarioId) return;
@@ -562,21 +626,12 @@ export default function DesignBuilderWorkspace() {
   };
 
   const runOptimization = async () => {
-    // Check report completion first
-    if (reportSections.length > 0) {
-      const pendingSections = reportSections.filter(
-        (section) => section.status === "pending" || section.status === "generating"
-      );
-      if (pendingSections.length > 0) {
-        setOptimizationError(
-          `Raporun tamamlanmasını bekleyin. ${pendingSections.length}/${reportSections.length} bölüm hala işleniyor.`
-        );
-        return;
-      }
-    }
-
     if (selectedOptimizationIds.length < 2) {
       setOptimizationError("Karsilastirma icin en az iki scenario sec.");
+      return;
+    }
+    if (!selectedReportsReady) {
+      setOptimizationError(optimizationBlockReason || "Optimizasyon icin secili senaryolarin raporlari tamamlanmali.");
       return;
     }
 
@@ -585,6 +640,23 @@ export default function DesignBuilderWorkspace() {
     setIsOptimizing(true);
 
     try {
+      const reportMarkdownByScenarioId = new Map<string, string>();
+      for (const scenarioId of selectedOptimizationIds) {
+        const reportGroupId = reportGroupByScenarioId[scenarioId];
+        if (!reportGroupId) {
+          throw new Error("Optimizasyon icin once secili senaryolarin raporlarini uret.");
+        }
+
+        const sections = await fetchReportSections(reportGroupId);
+        if (
+          sections.length !== REPORT_SECTION_DEFINITIONS.length ||
+          sections.some((section) => section.status !== "completed")
+        ) {
+          throw new Error("Optimizasyon icin secili raporlarin tum bolumleri tamamlanmis olmali.");
+        }
+        reportMarkdownByScenarioId.set(scenarioId, buildReportMarkdown(sections));
+      }
+
       const localPayloads = selectedOptimizationIds
         .map((scenarioId) => {
           const scenario = scenarios.find((item) => item.id === scenarioId);
@@ -612,6 +684,7 @@ export default function DesignBuilderWorkspace() {
               })),
             }),
             costEstimate: scenario.cost_estimate,
+            reportMarkdown: reportMarkdownByScenarioId.get(scenarioId) ?? null,
           };
         })
         .filter(
@@ -620,6 +693,7 @@ export default function DesignBuilderWorkspace() {
           ): item is {
             summary: ReturnType<typeof buildScenarioSummary>;
             costEstimate: number | null;
+            reportMarkdown: string | null;
           } => item !== null
         );
 
@@ -825,6 +899,25 @@ export default function DesignBuilderWorkspace() {
                             >
                               {syncedScenarioIds[scenario.id] ? "Supabase Senkron" : "Yerel Kayit"}
                             </span>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] ${
+                                reportStatusByScenarioId[scenario.id] === "completed"
+                                  ? "bg-cyan-100 text-cyan-700"
+                                  : reportStatusByScenarioId[scenario.id] === "generating"
+                                    ? "bg-blue-100 text-blue-700"
+                                    : reportStatusByScenarioId[scenario.id] === "failed"
+                                      ? "bg-rose-100 text-rose-700"
+                                      : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {reportStatusByScenarioId[scenario.id] === "completed"
+                                ? "Rapor Hazir"
+                                : reportStatusByScenarioId[scenario.id] === "generating"
+                                  ? "Rapor Uretiliyor"
+                                  : reportStatusByScenarioId[scenario.id] === "failed"
+                                    ? "Rapor Hatali"
+                                    : "Rapor Yok"}
+                            </span>
                           </div>
                           <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-3">
                             <p>Enerji: <span className="font-bold text-slate-900">{numberFmt(scenario.total_energy_consumption)}</span></p>
@@ -884,14 +977,17 @@ export default function DesignBuilderWorkspace() {
                   <Button
                     type="button"
                     className="bg-violet-600 hover:bg-violet-500"
-                    disabled={isOptimizing || selectedOptimizationIds.length < 2 || reportSections.some((s) => s.status === "pending" || s.status === "generating")}
+                    disabled={isOptimizing || isGeneratingReport || !selectedReportsReady}
                     onClick={() => void runOptimization()}
                   >
                     {isOptimizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
                     Optimization
                   </Button>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">Secilen scenario sayisi: {selectedOptimizationIds.length}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Secilen scenario sayisi: {selectedOptimizationIds.length}
+                  {optimizationBlockReason ? ` · ${optimizationBlockReason}` : " · Raporlar incelendi, optimizasyon hazir."}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -962,17 +1058,21 @@ export default function DesignBuilderWorkspace() {
         </Card>
       </div>
 
-      <AiStatusTerminal
-        isRunning={isAnalyzing}
-        trace={terminalTrace}
-        report={analysisReport}
-        error={analysisError}
-        language={analysisLanguage}
-        model={analysisModel}
-        provider={analysisProvider}
-      />
+      {isAnalyzing || terminalTrace.length > 0 || analysisReport || analysisError ? (
+        <AiStatusTerminal
+          isRunning={isAnalyzing}
+          trace={terminalTrace}
+          report={analysisReport}
+          error={analysisError}
+          language={analysisLanguage}
+          model={analysisModel}
+          provider={analysisProvider}
+        />
+      ) : null}
 
-      <ReportGenerationStepper sections={reportSections} isGenerating={isGeneratingReport} />
+      {isGeneratingReport || reportSections.length > 0 ? (
+        <ReportGenerationStepper sections={reportSections} isGenerating={isGeneratingReport} />
+      ) : null}
 
       {reportError ? (
         <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
