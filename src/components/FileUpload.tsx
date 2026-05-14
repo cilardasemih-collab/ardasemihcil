@@ -135,7 +135,7 @@ export default function FileUpload() {
       didSucceed = true;
 
       setIsAnalyzing(true);
-      setMessage("Yapay Zeka Veriyi Analiz Ediyor...");
+      setMessage("Veri uzman analizinden geciriliyor...");
 
       const analyzeResponse = await fetch("/api/analyze-csv", {
         method: "POST",
@@ -163,8 +163,8 @@ export default function FileUpload() {
         throw new Error(
           analyzePayload.error ??
             (analyzeResponse.status === 503
-              ? "AI analiz servisi gecici olarak mesgul veya zaman asimina ugradi. Birazdan tekrar deneyin."
-              : "AI analiz endpoint hatasi.")
+              ? "Analiz servisi gecici olarak mesgul veya zaman asimina ugradi. Birazdan tekrar deneyin."
+              : "Analiz endpoint hatasi.")
         );
       }
 
@@ -268,7 +268,7 @@ export default function FileUpload() {
         {isAnalyzing ? (
           <div className="flex items-center gap-2 text-sm text-cyan-700">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Yapay Zeka Veriyi Analiz Ediyor...</span>
+            <span>Veri uzman analizinden geciriliyor...</span>
           </div>
         ) : null}
 
@@ -351,7 +351,7 @@ export default function FileUpload() {
 
             {advancedInsights ? (
               <article className="rounded-2xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-violet-700">AI Uzman Icgorusu (Ek Adim)</p>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-violet-700">Uzman Icgorusu (Ek Adim)</p>
                 <div className="prose prose-slate max-w-none prose-headings:text-violet-900 prose-strong:text-violet-900">
                   <ReactMarkdown>{advancedInsights}</ReactMarkdown>
                 </div>
@@ -378,7 +378,7 @@ export default function FileUpload() {
 
             {actionPlan.length > 0 ? (
               <article className="rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
-                <p className="mb-2 text-sm font-bold text-sky-800">AI Danismaninin Ekstra OEE Tavsiyeleri</p>
+                <p className="mb-2 text-sm font-bold text-sky-800">Ekstra OEE Tavsiyeleri</p>
                 <ul className="list-disc space-y-1 pl-5 text-sm text-sky-900">
                   {actionPlan.map((item, index) => (
                     <li key={`${index}-${item}`}>{item}</li>

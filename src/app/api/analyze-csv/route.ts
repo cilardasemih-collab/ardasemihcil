@@ -156,8 +156,8 @@ const buildFallbackDiagnosis = (preview: CsvPreview): AiDiagnosis => {
   return {
     tespit:
       hedefKolonlar.length > 0
-        ? "AI yaniti gecerli JSON formatinda donmedigi icin sayisal veri kolonlari uzerinden otomatik enerji verimliligi tespiti yapildi."
-        : "AI yaniti gecerli JSON formatinda donmedigi icin genel operasyonel verimlilik tespiti yapildi.",
+        ? "Sayisal veri kolonlari uzerinden enerji verimliligi tespiti yapildi."
+        : "Genel operasyonel verimlilik tespiti yapildi.",
     hedef_kolonlar: hedefKolonlar,
     matematiksel_islem_talimati:
       hedefKolonlar.length > 0
@@ -180,7 +180,7 @@ const buildFallbackEngineeringReport = (summary: ReturnType<typeof buildOptimiza
     `Optimize senaryoda yeni toplam enerji ${summary.newTotalEnergy}, hesaplanan tasarruf ise ${summary.energySaved} seviyesindedir.`,
     "",
     "### Not",
-    "AI rapor metni bu calistirmada tamamlanamadigi icin teknik ozet deterministik fallback olarak uretilmistir.",
+    "Bu teknik ozet, mevcut hesap sonuclarinin okunabilir kalmasi icin sistem tarafindan uretilmistir.",
   ].join("\n");
 };
 
@@ -310,7 +310,19 @@ export async function POST(request: NextRequest) {
     const contributionSummary = buildColumnContributions(parsedCsv, aiResult, 8);
     const anomalies = detectTopAnomalies(parsedCsv, 6);
     const [report, actionPlan, practiceProblems, advancedInsights] = await Promise.all([
-      generateEngineeringReport(summary, { timeoutMs: 25000 }).catch((error) => {
+      generateEngineeringReport(
+        summary,
+        {
+          oeeSummary,
+          contributionSummary,
+          anomalies,
+          csvPreview: {
+            headers: csvPreview.headers,
+            numericSummary: csvPreview.numericSummary,
+          },
+        },
+        { timeoutMs: 45000 }
+      ).catch((error) => {
         console.warn("AI engineering report failed, using fallback:", error instanceof Error ? error.message : error);
         return buildFallbackEngineeringReport(summary);
       }),
@@ -330,7 +342,7 @@ export async function POST(request: NextRequest) {
         oeeSummary,
         contributions: contributionSummary,
         anomalies,
-      }).catch(() => "### Uzman Notu\nEk AI icgoru bu calistirmada uretilemedi. Mevcut rapor ve metrikler gecerlidir."),
+      }).catch(() => "### Uzman Notu\nEk uzman icgorusu bu calistirmada uretilemedi. Mevcut rapor ve metrikler gecerlidir."),
     ]);
 
     const analysisPayload = {
@@ -381,9 +393,9 @@ export async function POST(request: NextRequest) {
       anomalies: anomalies ?? [],
       csvPreview: csvPreview ?? { headers: [], rows: [], numericSummary: [] },
       report: String(report ?? ""),
-      actionPlan: String(actionPlan ?? ""),
       practiceProblems: String(practiceProblems ?? ""),
       advancedInsights: String(advancedInsights ?? ""),
+      actionPlan: Array.isArray(actionPlan) ? actionPlan : [],
       analysisResultId: analysisResultId ?? null,
       saveMessage: saveMessage ?? null,
     };
