@@ -37,6 +37,8 @@ const handleExportPdf = (result: OptimizationComparisonResult) => {
     <p>Karbon Salımı: ${numberFmt(result.winner.annualCarbonKg)} kgCO₂/yıl</p>
     <h2>Senaryo Karşılaştırması</h2>
     ${buildMarkdownTable(result.scenarios, result.currency.symbol)}
+    <h2>Bölüm Bazlı Kazananlar</h2>
+    <ul>${result.sectionWinners.map((item) => `<li>${item.sectionTitle}: ${item.winnerScenarioName} - ${item.reason}</li>`).join("")}</ul>
     <h2>Stratejist Karar</h2>
     <p>${result.strategistSummary}</p>
   `;
@@ -252,6 +254,35 @@ export default function OptimizationDashboard({ result }: OptimizationDashboardP
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <Crown className="h-5 w-5 text-amber-500" />
+          <p className="font-bold text-slate-900">Bölüm Bazlı Kazananlar</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {result.sectionWinners.map((item, index) => (
+            <article
+              key={item.sectionKey}
+              className={`rounded-2xl border p-4 ${
+                item.winnerScenarioId === result.winner.scenarioId
+                  ? "border-emerald-200 bg-emerald-50"
+                  : index % 2 === 0
+                    ? "border-cyan-200 bg-cyan-50"
+                    : "border-violet-200 bg-violet-50"
+              }`}
+            >
+              <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                {index + 1}. adim
+              </p>
+              <h4 className="mt-1 text-sm font-black text-slate-900">{item.sectionTitle}</h4>
+              <p className="mt-2 text-sm font-bold text-slate-800">Galip: {item.winnerScenarioName}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-700">{item.reason}</p>
+              <p className="mt-2 text-xs font-black text-slate-500">Bolum skoru: {numberFmt(item.score, 2)}</p>
+            </article>
+          ))}
         </div>
       </div>
 

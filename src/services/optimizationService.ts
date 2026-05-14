@@ -1,6 +1,7 @@
 import { generateLlmText } from "@/lib/ai/llmClient";
 import { STRATEGIST_SYSTEM_PROMPT } from "@/constants/prompts";
 import type { ScenarioSummaryPayload } from "@/services/aiOrchestrator";
+import { REPORT_SECTION_DEFINITIONS, type ReportSectionKey } from "@/types/report";
 
 export type OptimizationScenarioDossier = {
   scenarioId: string;
@@ -62,9 +63,19 @@ export type OptimizationComparisonResult = {
   baselineScenarioId: string;
   winner: OptimizationScenarioDossier;
   scenarios: OptimizationScenarioDossier[];
+  sectionWinners: OptimizationSectionWinner[];
   latexTable: string;
   strategistSummary: string;
   currency: CurrencyConfig;
+};
+
+export type OptimizationSectionWinner = {
+  sectionKey: ReportSectionKey;
+  sectionTitle: string;
+  winnerScenarioId: string;
+  winnerScenarioName: string;
+  reason: string;
+  score: number;
 };
 
 const CARBON_FACTOR_KG_PER_KWH = 0.42;
@@ -135,6 +146,62 @@ const buildStrategistPrompt = (dossiers: OptimizationScenarioDossier[], latexTab
     "LaTeX comparison table:",
     latexTable,
   ].join("\n\n");
+};
+
+const buildSectionWinners = (
+  dossiers: OptimizationScenarioDossier[],
+  sourceScenarios: Array<{ summary: ScenarioSummaryPayload; costEstimate: number | null; reportMarkdown?: string | null }>,
+  currency: CurrencyConfig
+): OptimizationSectionWinner[] => {
+  const summaryById = new Map(sourceScenarios.map((item) => [item.summary.scenario.id, item.summary]));
+
+  const scoreBySection = (sectionKey: ReportSectionKey, dossier: OptimizationScenarioDossier) => {
+    const summary = summaryById.get(dossier.scenarioId)?.summary;
+    const anomalies = summary?.detectedAnomalies.length ?? 0;
+    const heating = summary?.metrics.heatingLoad.sum ?? dossier.annualEnergyKwh;
+    const cooling = summary?.metrics.coolingLoad.sum ?? 0;
+    const peakHeating = summary?.peaks.heating?.value ?? 0;
+    const peakCooling = summary?.peaks.cooling?.value ?? 0;
+
+    if (sectionKey === "methodology_and_data_quality") return Math.max(0, 100 - anomalies * 15 + Math.min((summary?.rowCount ?? 0) / 20, 10));
+    if (sectionKey === "climate_and_boundary_conditions") return dossier.comfortScore - anomalies * 5;
+    if (sectionKey === "envelope_analysis") return Math.max(0, 100 - Math.abs(heating) / 25000);
+    if (sectionKey === "energy_profile") return dossier.intensityScore || Math.max(0, 100 - dossier.annualEnergyKwh / 50000);
+    if (sectionKey === "peak_load_analysis") return Math.max(0, 100 - (Math.abs(peakHeating) + Math.abs(peakCooling)) / 15000);
+    if (sectionKey === "carbon_and_cost") return dossier.carbonScore * 0.5 + dossier.roiScore * 0.5;
+    if (sectionKey === "thermal_comfort") return dossier.comfortScore;
+    if (sectionKey === "risk_and_anomalies") return Math.max(0, 100 - anomalies * 20 - (cooling < 0 ? 10 : 0));
+    return dossier.finalScore;
+  };
+
+  return REPORT_SECTION_DEFINITIONS.map((section) => {
+    const ranked = dossiers
+      .map((dossier) => ({ dossier, score: scoreBySection(section.key, dossier) }))
+      .sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    const summary = summaryById.get(best.dossier.scenarioId)?.summary;
+    const reasonMap: Record<ReportSectionKey, string> = {
+      project_summary: `${best.dossier.scenarioName}, genel karar skorunda ${best.dossier.finalScore} ile en dengeli dosya oldugu icin one cikti.`,
+      methodology_and_data_quality: `${best.dossier.scenarioName}, veri kalitesi riskleri ve okunabilir satir kapsaminda daha guvenilir gorundugu icin one cikti.`,
+      climate_and_boundary_conditions: `${best.dossier.scenarioName}, iklim ve sinir kosulu yorumunu destekleyen konfor/duyarlilik skorunda daha iyi denge verdi.`,
+      envelope_analysis: `${best.dossier.scenarioName}, isitma yuku baskisini daha dusuk tuttugu icin kabuk performansi tarafinda avantajli gorundu.`,
+      energy_profile: `${best.dossier.scenarioName}, enerji profili ve yogunluk skoru acisindan daha iyi toplam performans gosterdi.`,
+      peak_load_analysis: `${best.dossier.scenarioName}, pik yuk riski daha dusuk oldugu icin sistem kapasitesi acisindan daha guvenli secenek oldu.`,
+      carbon_and_cost: `${best.dossier.scenarioName}, karbon ve isletme maliyeti dengesinde ${currency.symbol}${best.dossier.annualOpexEstimate} yillik maliyetle one cikti.`,
+      thermal_comfort: `${best.dossier.scenarioName}, ${best.dossier.comfortScore}/100 konfor skoruyla bu bolumun galibi oldu.`,
+      risk_and_anomalies: `${best.dossier.scenarioName}, ${summary?.detectedAnomalies.length ?? 0} anomali ile risk profilinde daha temiz okundu.`,
+      optimization_conclusion: `${best.dossier.scenarioName}, tum kriterlerin agirlikli toplaminda en yuksek final skoru verdigi icin nihai secime en yakin dosya oldu.`,
+    };
+
+    return {
+      sectionKey: section.key,
+      sectionTitle: section.title,
+      winnerScenarioId: best.dossier.scenarioId,
+      winnerScenarioName: best.dossier.scenarioName,
+      reason: reasonMap[section.key],
+      score: round(best.score, 2),
+    };
+  });
 };
 
 export function aggregateScenarioOptimization(input: {
@@ -262,10 +329,12 @@ export async function buildOptimizationDecision(input: {
   const { baselineScenarioId, dossiers: scenarios } = aggregateScenarioOptimization({ scenarios: input.scenarios, currency });
   const winner = scenarios[0];
   const latexTable = buildLatexTable(scenarios);
+  const sectionWinners = buildSectionWinners(scenarios, input.scenarios, currency);
   const fallbackSummary =
     input.language === "tr"
       ? [
           `${winner.scenarioName} en yuksek toplam verimlilik skorunu aldi (${winner.finalScore}).`,
+          `Bolum bazli incelemede ${sectionWinners.filter((item) => item.winnerScenarioId === winner.scenarioId).length}/${sectionWinners.length} baslikta one cikti.`,
           `Yillik enerji tuketimi ${winner.annualEnergyKwh} kWh, karbon etkisi ${winner.annualCarbonKg} kgCO2/yil.`,
           `Yillik isletme maliyeti ${currency.symbol}${winner.annualOpexEstimate} (${currency.code}), ${winner.roiYears ? `kapital geri donusum suresi ${winner.roiYears} yil` : "hemen kari"}.`,
           `Karar: ROI (%35), enerji yogunlugu (%25), konfor (%20) ve karbon (%20) oranlarinda degerlendirilmistir.`,
@@ -295,6 +364,7 @@ export async function buildOptimizationDecision(input: {
     baselineScenarioId,
     winner,
     scenarios,
+    sectionWinners,
     latexTable,
     strategistSummary,
     currency,

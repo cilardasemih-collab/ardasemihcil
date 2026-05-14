@@ -86,6 +86,15 @@ const numberFmt = (value: number | null | undefined, maximumFractionDigits = 2) 
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+const reportCardStyles = [
+  "border-cyan-200 bg-cyan-50 text-cyan-950",
+  "border-emerald-200 bg-emerald-50 text-emerald-950",
+  "border-amber-200 bg-amber-50 text-amber-950",
+  "border-violet-200 bg-violet-50 text-violet-950",
+  "border-rose-200 bg-rose-50 text-rose-950",
+  "border-blue-200 bg-blue-50 text-blue-950",
+];
+
 const readStorage = <T,>(key: string, fallback: T): T => {
   if (typeof window === "undefined") return fallback;
   try {
@@ -471,6 +480,32 @@ export default function DesignBuilderWorkspace() {
     throw new Error("Rapor uretimi zaman asimina ugradi.");
   };
 
+  const selectScenarioReport = async (scenario: Scenario) => {
+    const reportGroupId = reportGroupByScenarioId[scenario.id];
+    setReportScenarioId(scenario.id);
+    setActiveReportGroupId(reportGroupId ?? "");
+    setActiveReportTitle(
+      analysisLanguage === "tr"
+        ? `${selectedProject?.name ?? "Project"} - ${scenario.name} Teknik Raporu`
+        : `${selectedProject?.name ?? "Project"} - ${scenario.name} Technical Report`
+    );
+    setReportError("");
+
+    if (!reportGroupId) {
+      setReportSections([]);
+      return;
+    }
+
+    try {
+      const sections = await fetchReportSections(reportGroupId);
+      setReportSections(sections);
+      if (sections[0]?.reportTitle) setActiveReportTitle(sections[0].reportTitle);
+    } catch (error) {
+      setReportSections([]);
+      setReportError(error instanceof Error ? error.message : "Rapor bolumleri okunamadi.");
+    }
+  };
+
   const generateReportForScenario = async (scenario: Scenario) => {
     const reportGroupId = reportGroupByScenarioId[scenario.id] ?? crypto.randomUUID();
     setReportGroupByScenarioId((prev) => ({ ...prev, [scenario.id]: reportGroupId }));
@@ -566,6 +601,7 @@ export default function DesignBuilderWorkspace() {
         error?: string;
         winner?: OptimizationComparisonResult["winner"];
         scenarios?: OptimizationComparisonResult["scenarios"];
+        sectionWinners?: OptimizationComparisonResult["sectionWinners"];
         latexTable?: string;
         strategistSummary?: string;
         baselineScenarioId?: string;
@@ -577,6 +613,7 @@ export default function DesignBuilderWorkspace() {
         !payload.success ||
         !payload.winner ||
         !payload.scenarios ||
+        !payload.sectionWinners ||
         !payload.latexTable ||
         !payload.strategistSummary ||
         !payload.baselineScenarioId ||
@@ -588,6 +625,7 @@ export default function DesignBuilderWorkspace() {
       setOptimizationResult({
         winner: payload.winner,
         scenarios: payload.scenarios,
+        sectionWinners: payload.sectionWinners,
         latexTable: payload.latexTable,
         strategistSummary: payload.strategistSummary,
         baselineScenarioId: payload.baselineScenarioId,
@@ -669,6 +707,16 @@ export default function DesignBuilderWorkspace() {
   };
 
   const completedReportCount = projectScenarios.filter((scenario) => reportStatusByScenarioId[scenario.id] === "completed").length;
+  const activeReportScenario = projectScenarios.find((scenario) => scenario.id === reportScenarioId) ?? projectScenarios[0] ?? null;
+  const activeScenarioCompletedSections =
+    activeReportScenario && reportStatusByScenarioId[activeReportScenario.id] !== "completed"
+      ? reportSections.filter((section) => section.status === "completed").length
+      : 0;
+  const totalReportSteps = projectScenarios.length * REPORT_SECTION_DEFINITIONS.length;
+  const completedReportSteps = Math.min(
+    totalReportSteps,
+    completedReportCount * REPORT_SECTION_DEFINITIONS.length + activeScenarioCompletedSections
+  );
   const canOpenStep = (step: WizardStep) => {
     if (step === "project") return true;
     if (step === "upload") return Boolean(selectedProject);
@@ -950,24 +998,58 @@ export default function DesignBuilderWorkspace() {
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-blue-700" />
                   <div>
-                    <p className="text-sm font-black text-slate-900">Siralı Raporlama</p>
-                    <p className="text-xs text-slate-500">Her dosya kendi icinde bolum bolum raporlanir; sonra karsilastirma baslar.</p>
+                    <p className="text-sm font-black text-slate-900">Cok Dosyali Raporlama</p>
+                    <p className="text-xs text-slate-500">
+                      {projectScenarios.length > 0
+                        ? `${projectScenarios.length} dosya icin ${totalReportSteps} bolum adimi calisir; hepsi tamamlaninca karsilastirma baslar.`
+                        : "Dosya yukleyince her dosya ayri rapor sayfasi olarak hazirlanir."}
+                    </p>
                   </div>
                 </div>
                 <Button type="button" onClick={() => void runSequentialReportsAndComparison()} disabled={isGeneratingReport || projectScenarios.length === 0}>
                   {isGeneratingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                  Akisi Baslat
+                  Tum Dosyalari Raporla
                 </Button>
               </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-600">
+                  <span>Toplam bolum ilerlemesi</span>
+                  <span>
+                    {completedReportSteps}/{totalReportSteps || 0}
+                  </span>
+                </div>
+                <Progress value={totalReportSteps > 0 ? (completedReportSteps / totalReportSteps) * 100 : 0} />
+              </div>
               <div className="grid gap-3 md:grid-cols-3">
-                {projectScenarios.map((scenario) => (
-                  <article key={scenario.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="text-sm font-black text-slate-900">{scenario.name}</p>
-                    <p className="mt-2 text-xs font-semibold text-slate-600">
-                      Durum: {reportStatusByScenarioId[scenario.id] ?? "idle"}
-                    </p>
-                  </article>
-                ))}
+                {projectScenarios.map((scenario, index) => {
+                  const status = reportStatusByScenarioId[scenario.id] ?? "idle";
+                  const reportGroupId = reportGroupByScenarioId[scenario.id];
+                  const isActive = reportScenarioId === scenario.id;
+                  return (
+                    <button
+                      key={scenario.id}
+                      type="button"
+                      onClick={() => void selectScenarioReport(scenario)}
+                      className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+                        reportCardStyles[index % reportCardStyles.length]
+                      } ${isActive ? "ring-2 ring-slate-900" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black">{scenario.name}</p>
+                          <p className="mt-1 text-xs font-semibold opacity-80">
+                            10 bolum · {scenarioRowsById[scenario.id]?.length ?? 0} satir
+                          </p>
+                        </div>
+                        {status === "generating" ? <Loader2 className="h-4 w-4 animate-spin" /> : status === "completed" ? <CheckCircle2 className="h-4 w-4" /> : null}
+                      </div>
+                      <p className="mt-3 text-xs font-black uppercase">Durum: {status}</p>
+                      <p className="mt-1 text-xs opacity-75">
+                        {reportGroupId ? "Rapor sayfasi hazir / tiklayip ac" : "Rapor henuz baslamadi"}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                 <p className="font-black text-slate-900">Akis Gunlugu</p>
@@ -983,6 +1065,15 @@ export default function DesignBuilderWorkspace() {
             </CardContent>
           </Card>
 
+          {activeReportScenario ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Secili Dosya Rapor Sayfasi</p>
+              <h3 className="mt-1 text-xl font-black text-slate-900">{activeReportScenario.name}</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Her bolum kendi renkli kartinda uretilir, duzenlenir ve yeniden uretilebilir.
+              </p>
+            </div>
+          ) : null}
           {reportSections.length > 0 ? <ReportGenerationStepper sections={reportSections} isGenerating={isGeneratingReport} /> : null}
           {reportError ? <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{reportError}</p> : null}
           {reportSections.length > 0 ? (

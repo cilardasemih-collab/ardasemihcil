@@ -141,6 +141,7 @@ export async function POST(request: NextRequest) {
       success: true,
       winner: result.winner,
       scenarios: result.scenarios,
+      sectionWinners: result.sectionWinners,
       latexTable: result.latexTable,
       strategistSummary: result.strategistSummary,
       baselineScenarioId: result.baselineScenarioId,

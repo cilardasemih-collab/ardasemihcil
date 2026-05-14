@@ -23,7 +23,7 @@ const sectionPayloadSchema = z.object({
 });
 
 const SECTION_GENERATION_TIMEOUT_MS = 45000;
-const REPORT_GENERATION_BUDGET_MS = 240000;
+const REPORT_GENERATION_BUDGET_MS = 260000;
 
 type SectionMemoryItem = { title: string; summary: string };
 
@@ -31,6 +31,29 @@ const sectionPromptForLanguage = (language: "tr" | "en") =>
   language === "tr"
     ? "Cevabi Turkce yaz. Markdown kullan. Gerekli durumlarda alinti yaptigin kurallar icin dokuman adini ve sayfa numarasini parantez icinde ver."
     : "Write in English using Markdown. Whenever you cite a rule or standard, append the document name and page number in parentheses.";
+
+const sectionMethodPrompt: Record<ReportSectionKey, string> = {
+  project_summary:
+    "Method: Synthesize the scenario as an executive decision note. State the main winner/concern, not just scope.",
+  methodology_and_data_quality:
+    "Method: Audit CSV parsing quality, units, negative values, missing humidity, row/zone consistency, and whether the data can support final engineering decisions.",
+  climate_and_boundary_conditions:
+    "Method: Use the project location as city context. Discuss climate drivers such as heating/cooling season, outdoor conditions, solar gain, humidity, wind/infiltration sensitivity, and weather-file assumptions. If exact weather data is unavailable, say which climate inputs must be verified; do not invent exact degree-day values.",
+  envelope_analysis:
+    "Method: Tie heating/cooling loads to envelope behavior, U-value availability, infiltration, glazing, roof/wall/floor losses, and which envelope alternatives should be simulated next.",
+  energy_profile:
+    "Method: Compare heating, cooling, top zones, load balance, sign problems, and trend implications. Include at least one compact markdown table.",
+  peak_load_analysis:
+    "Method: Interpret peak heating/cooling as system sizing risk. Discuss peak timestamp/zone validation, diversity, terminal unit sizing, and outlier checks.",
+  carbon_and_cost:
+    "Method: Convert energy implications into operating cost and carbon logic. Identify missing tariff, fuel, COP, emission factor, and CAPEX assumptions.",
+  thermal_comfort:
+    "Method: Evaluate air temperature, humidity, comfort band risk, schedule assumptions, and what PMV/PPD or adaptive-comfort inputs are missing.",
+  risk_and_anomalies:
+    "Method: Prioritize anomalies by engineering severity. Separate data-quality risk from physical-model risk and give a verification plan.",
+  optimization_conclusion:
+    "Method: Turn all previous sections into a practical decision roadmap. Rank next actions and state whether the scenario can be selected now or needs re-export/re-simulation.",
+};
 
 const buildSectionPrompt = (input: {
   section: ReportSectionDefinition;
@@ -52,6 +75,7 @@ const buildSectionPrompt = (input: {
     JSON.stringify({ markdown: "string", summary: "string" }, null, 2),
     `Current section: ${input.section.title}`,
     `Goal: ${input.section.goal}`,
+    `Required section-specific analysis method: ${sectionMethodPrompt[input.section.key]}`,
     input.memory.length > 0
       ? `Critical memory from previous sections:\n${input.memory.map((item) => `- ${item.title}: ${item.summary}`).join("\n")}`
       : "There are no previous sections yet.",
@@ -408,7 +432,8 @@ export async function generateReportSectionsFrom(input: {
   const sectionsToGenerate =
     startIndex >= 0 ? REPORT_SECTION_DEFINITIONS.slice(startIndex) : REPORT_SECTION_DEFINITIONS;
 
-  for (const section of sectionsToGenerate) {
+  for (let sectionIndex = 0; sectionIndex < sectionsToGenerate.length; sectionIndex += 1) {
+    const section = sectionsToGenerate[sectionIndex];
     await updateSectionRow({
       reportGroupId: input.reportGroupId,
       sectionKey: section.key,
@@ -461,11 +486,38 @@ export async function generateReportSectionsFrom(input: {
       });
 
       if (Date.now() - startedAt > REPORT_GENERATION_BUDGET_MS) {
-        await markRemainingSectionsFailed({
-          reportGroupId: input.reportGroupId,
-          fromSectionKey: section.key,
-          message: "Rapor üretimi zaman sınırını aştı. Kalan bölümler için tekrar deneyin.",
-        });
+        for (const remainingSection of sectionsToGenerate.slice(sectionIndex + 1)) {
+          const fallback = buildFallbackSection({
+            section: remainingSection,
+            language: input.language,
+            scenarioSummary: input.scenarioSummary,
+            memory,
+          });
+          memory.push({
+            title: remainingSection.title,
+            summary: fallback.summary,
+          });
+          await updateSectionRow({
+            reportGroupId: input.reportGroupId,
+            sectionKey: remainingSection.key,
+            values: {
+              status: "completed",
+              section_content: fallback.markdown,
+              initial_section_content: fallback.markdown,
+              section_summary: fallback.summary,
+              review_status: "draft",
+              last_edited_source: "ai",
+              context_snapshot: {
+                retrievedContext,
+                memory,
+                scenarioSummary: input.scenarioSummary,
+                provider: fallback.provider,
+                model: fallback.model,
+                completionMode: "budget_fallback",
+              },
+            },
+          });
+        }
         break;
       }
     } catch (error) {

@@ -57,6 +57,19 @@ const getScenarioSummary = (sections: ReportSectionRecord[]) => {
 const numberFmt = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(value) : "-";
 
+const sectionCardStyles = [
+  "border-cyan-200 bg-cyan-50/70",
+  "border-emerald-200 bg-emerald-50/70",
+  "border-amber-200 bg-amber-50/70",
+  "border-violet-200 bg-violet-50/70",
+  "border-rose-200 bg-rose-50/70",
+  "border-blue-200 bg-blue-50/70",
+  "border-lime-200 bg-lime-50/70",
+  "border-fuchsia-200 bg-fuchsia-50/70",
+  "border-orange-200 bg-orange-50/70",
+  "border-teal-200 bg-teal-50/70",
+];
+
 export default function ReportViewer({ reportTitle, sections, onRegenerate, onSaveEdit }: ReportViewerProps) {
   const exportRootRef = useRef<HTMLDivElement | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -198,15 +211,19 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
           </ol>
         </article>
 
-        {sections.map((section) => {
+        {sections.map((section, sectionIndex) => {
           const isEditing = editingKey === section.sectionKey;
           const currentDraft = drafts[section.sectionKey] ?? section.sectionContent;
+          const colorClass = sectionCardStyles[sectionIndex % sectionCardStyles.length];
           return (
-            <article key={section.id} data-report-page="1" className="rounded-[28px] border border-slate-200 bg-white p-8">
+            <article key={section.id} data-report-page="1" className={`rounded-[28px] border p-8 ${colorClass}`}>
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Page {section.sectionOrder + 2}</p>
                   <h4 className="mt-1 text-xl font-black text-slate-900">{section.sectionTitle}</h4>
+                  <p className="mt-1 text-xs font-semibold text-slate-600">
+                    Bu bolum kendi kartinda duzenlenir, kaydedilir veya yeniden uretilir.
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
