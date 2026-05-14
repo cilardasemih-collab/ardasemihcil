@@ -26,7 +26,7 @@ type ScenarioRow = {
   name: string;
   u_values: Record<string, number> | null;
   total_energy_consumption: number | null;
-  projects: { name: string; location: string | null } | null;
+  projects: { name: string; location: string | null; climate_data: Record<string, unknown> | null } | null;
 };
 
 type SimulationRow = {
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceClient();
     const { data: scenarioData, error: scenarioError } = await supabase
       .from("scenarios")
-      .select("id, project_id, name, u_values, total_energy_consumption, projects(name, location)")
+      .select("id, project_id, name, u_values, total_energy_consumption, projects(name, location, climate_data)")
       .eq("id", body.scenarioId)
       .single();
     if (scenarioError || !scenarioData) {
@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
         uValues: scenario.u_values ?? {},
         projectName: scenario.projects?.name ?? "Unknown Project",
         location: scenario.projects?.location ?? null,
+        projectContext: scenario.projects?.climate_data ?? {},
       },
       rows,
     });

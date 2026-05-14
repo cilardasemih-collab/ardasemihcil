@@ -35,10 +35,12 @@ type ScenarioRow = {
     | {
         name: string;
         location: string | null;
+        climate_data: Record<string, unknown> | null;
       }
     | Array<{
         name: string;
         location: string | null;
+        climate_data: Record<string, unknown> | null;
       }>
     | null;
 };
@@ -48,6 +50,7 @@ const projectMetaFromRow = (row: ScenarioRow) => {
   return {
     name: project?.name ?? "Unknown Project",
     location: project?.location ?? null,
+    projectContext: project?.climate_data ?? {},
   };
 };
 
@@ -75,7 +78,7 @@ export async function POST(request: NextRequest) {
 
         const { data: scenariosData, error: scenariosError } = await supabase
           .from("scenarios")
-          .select("id, project_id, name, u_values, total_energy_consumption, cost_estimate, projects(name, location)")
+          .select("id, project_id, name, u_values, total_energy_consumption, cost_estimate, projects(name, location, climate_data)")
           .in("id", remainingIds);
 
         if (scenariosError) {
@@ -111,6 +114,7 @@ export async function POST(request: NextRequest) {
               uValues: scenario.u_values ?? {},
               projectName: projectMetaFromRow(scenario).name,
               location: projectMetaFromRow(scenario).location,
+              projectContext: projectMetaFromRow(scenario).projectContext,
             },
             rows,
           });

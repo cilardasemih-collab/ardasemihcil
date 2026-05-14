@@ -50,6 +50,7 @@ export type ScenarioSummaryPayload = {
     uValues: Record<string, number>;
     projectName: string;
     location: string | null;
+    projectContext?: Record<string, unknown>;
   };
   summary: {
     rowCount: number;

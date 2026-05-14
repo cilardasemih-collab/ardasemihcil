@@ -88,6 +88,7 @@ export function buildScenarioSummary(input: {
     uValues: Record<string, number>;
     projectName: string;
     location: string | null;
+    projectContext?: Record<string, unknown>;
   };
   rows: SimulationData[];
 }) {

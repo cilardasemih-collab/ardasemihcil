@@ -23,8 +23,6 @@ const sectionPayloadSchema = z.object({
 });
 
 const SECTION_GENERATION_TIMEOUT_MS = 45000;
-const REPORT_GENERATION_BUDGET_MS = 260000;
-
 type SectionMemoryItem = { title: string; summary: string };
 
 const sectionPromptForLanguage = (language: "tr" | "en") =>
@@ -69,6 +67,7 @@ const buildSectionPrompt = (input: {
     "Do not mention fallback engines, AI limitations, missing services, or that you are following a prompt.",
     "Avoid repeating generic scope bullets from earlier sections. Each section must have a distinct argument and decision value.",
     "Use the scenario metrics as evidence, but do not dump every metric unless it supports the section's conclusion.",
+    "Use projectContext fields as first-class engineering context: building type, floor area, HVAC, occupancy, weather file, design goal, and location notes.",
     "DİKKAT: Geçmiş mühendis geri bildirimlerine dayanan şu kuralları UYGULA:",
     input.learnedRulesContext,
     "Return JSON only with this schema:",
@@ -427,13 +426,11 @@ export async function generateReportSectionsFrom(input: {
   const memory = [...input.initialMemory];
   let provider = "";
   let model = "";
-  const startedAt = Date.now();
   const startIndex = REPORT_SECTION_DEFINITIONS.findIndex((section) => section.key === input.startSectionKey);
   const sectionsToGenerate =
     startIndex >= 0 ? REPORT_SECTION_DEFINITIONS.slice(startIndex) : REPORT_SECTION_DEFINITIONS;
 
-  for (let sectionIndex = 0; sectionIndex < sectionsToGenerate.length; sectionIndex += 1) {
-    const section = sectionsToGenerate[sectionIndex];
+  for (const section of sectionsToGenerate) {
     await updateSectionRow({
       reportGroupId: input.reportGroupId,
       sectionKey: section.key,
@@ -485,41 +482,6 @@ export async function generateReportSectionsFrom(input: {
         },
       });
 
-      if (Date.now() - startedAt > REPORT_GENERATION_BUDGET_MS) {
-        for (const remainingSection of sectionsToGenerate.slice(sectionIndex + 1)) {
-          const fallback = buildFallbackSection({
-            section: remainingSection,
-            language: input.language,
-            scenarioSummary: input.scenarioSummary,
-            memory,
-          });
-          memory.push({
-            title: remainingSection.title,
-            summary: fallback.summary,
-          });
-          await updateSectionRow({
-            reportGroupId: input.reportGroupId,
-            sectionKey: remainingSection.key,
-            values: {
-              status: "completed",
-              section_content: fallback.markdown,
-              initial_section_content: fallback.markdown,
-              section_summary: fallback.summary,
-              review_status: "draft",
-              last_edited_source: "ai",
-              context_snapshot: {
-                retrievedContext,
-                memory,
-                scenarioSummary: input.scenarioSummary,
-                provider: fallback.provider,
-                model: fallback.model,
-                completionMode: "budget_fallback",
-              },
-            },
-          });
-        }
-        break;
-      }
     } catch (error) {
       await updateSectionRow({
         reportGroupId: input.reportGroupId,

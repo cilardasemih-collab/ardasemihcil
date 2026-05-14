@@ -125,6 +125,12 @@ export default function DesignBuilderWorkspace() {
   const [selectedProjectId, setSelectedProjectId] = useState(seedProjects[0]?.id ?? "");
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectLocation, setNewProjectLocation] = useState("");
+  const [newProjectBuildingType, setNewProjectBuildingType] = useState("");
+  const [newProjectFloorArea, setNewProjectFloorArea] = useState("");
+  const [newProjectHvac, setNewProjectHvac] = useState("");
+  const [newProjectOccupancy, setNewProjectOccupancy] = useState("");
+  const [newProjectWeatherFile, setNewProjectWeatherFile] = useState("");
+  const [newProjectDesignGoal, setNewProjectDesignGoal] = useState("");
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [isDragging, setIsDragging] = useState(false);
   const [progressValue, setProgressValue] = useState(0);
@@ -290,13 +296,28 @@ export default function DesignBuilderWorkspace() {
       user_id: seedProjects[0]?.user_id ?? crypto.randomUUID(),
       name: newProjectName,
       location: newProjectLocation || null,
-      climate_data: { source: "manual-entry" },
+      climate_data: {
+        source: "manual-entry",
+        locationQuery: newProjectLocation || null,
+        buildingType: newProjectBuildingType || null,
+        floorAreaM2: Number.isFinite(Number(newProjectFloorArea)) && newProjectFloorArea.trim() ? Number(newProjectFloorArea) : null,
+        hvacSystem: newProjectHvac || null,
+        occupancyProfile: newProjectOccupancy || null,
+        weatherFile: newProjectWeatherFile || null,
+        designGoal: newProjectDesignGoal || null,
+      },
     });
     const created: Project = { id: crypto.randomUUID(), created_at: new Date(), ...parsed };
     setProjects((prev) => [created, ...prev]);
     setSelectedProjectId(created.id);
     setNewProjectName("");
     setNewProjectLocation("");
+    setNewProjectBuildingType("");
+    setNewProjectFloorArea("");
+    setNewProjectHvac("");
+    setNewProjectOccupancy("");
+    setNewProjectWeatherFile("");
+    setNewProjectDesignGoal("");
     setActiveStep("upload");
   };
 
@@ -565,6 +586,7 @@ export default function DesignBuilderWorkspace() {
             uValues: scenario.u_values ?? {},
             projectName: project.name,
             location: project.location ?? null,
+            projectContext: project.climate_data ?? {},
           },
           rows: rows.map((row, index) => ({
             id: `${scenario.id}-${index}`,
@@ -780,16 +802,26 @@ export default function DesignBuilderWorkspace() {
                 >
                   <p className="text-sm font-black text-slate-900">{project.name}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-600">{project.location || "Konum girilmedi"}</p>
+                  <p className="mt-2 text-[11px] font-semibold text-cyan-800">
+                    {String(project.climate_data?.buildingType ?? "Yapi tipi belirtilmedi")}
+                    {project.climate_data?.floorAreaM2 ? ` · ${project.climate_data.floorAreaM2} m2` : ""}
+                  </p>
                   <p className="mt-3 text-[11px] text-slate-500">
                     Senaryo: {scenarios.filter((scenario) => scenario.project_id === project.id).length}
                   </p>
                 </button>
               ))}
             </div>
-            <div className="grid gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_160px]">
+            <div className="grid gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 md:grid-cols-2">
               <Input value={newProjectName} onChange={(event) => setNewProjectName(event.target.value)} placeholder="Yeni proje adi" />
-              <Input value={newProjectLocation} onChange={(event) => setNewProjectLocation(event.target.value)} placeholder="Konum" />
-              <Button type="button" onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-cyan-700 hover:bg-cyan-600">
+              <Input value={newProjectLocation} onChange={(event) => setNewProjectLocation(event.target.value)} placeholder="Gercek konum / sehir / ilce" />
+              <Input value={newProjectBuildingType} onChange={(event) => setNewProjectBuildingType(event.target.value)} placeholder="Yapi tipi: ofis, okul, hastane..." />
+              <Input value={newProjectFloorArea} onChange={(event) => setNewProjectFloorArea(event.target.value)} placeholder="Yaklasik alan m2" />
+              <Input value={newProjectHvac} onChange={(event) => setNewProjectHvac(event.target.value)} placeholder="HVAC sistemi: VRF, chiller, kazan..." />
+              <Input value={newProjectOccupancy} onChange={(event) => setNewProjectOccupancy(event.target.value)} placeholder="Kullanim profili: 08:00-18:00, 7/24..." />
+              <Input value={newProjectWeatherFile} onChange={(event) => setNewProjectWeatherFile(event.target.value)} placeholder="EPW/weather file veya iklim kaynagi" />
+              <Input value={newProjectDesignGoal} onChange={(event) => setNewProjectDesignGoal(event.target.value)} placeholder="Tasarim hedefi: enerji, konfor, karbon..." />
+              <Button type="button" onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-cyan-700 hover:bg-cyan-600 md:col-span-2">
                 Proje Olustur
               </Button>
             </div>

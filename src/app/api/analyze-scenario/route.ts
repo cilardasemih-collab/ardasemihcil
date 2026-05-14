@@ -24,6 +24,7 @@ type ScenarioRow = {
     id: string;
     name: string;
     location: string | null;
+    climate_data: Record<string, unknown> | null;
   } | null;
 };
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     const { data: scenarioData, error: scenarioError } = await supabase
       .from("scenarios")
-      .select("id, project_id, name, u_values, total_energy_consumption, projects(id, name, location)")
+      .select("id, project_id, name, u_values, total_energy_consumption, projects(id, name, location, climate_data)")
       .eq("id", parsedBody.scenarioId)
       .single();
 
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
         uValues: scenario.u_values ?? {},
         projectName: scenario.projects?.name ?? "Unknown Project",
         location: scenario.projects?.location ?? null,
+        projectContext: scenario.projects?.climate_data ?? {},
       },
       rows,
     });
