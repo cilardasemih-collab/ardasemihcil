@@ -383,12 +383,12 @@ export default function DesignBuilderWorkspace() {
       setSyncedScenarioIds((prev) => ({ ...prev, [scenarioId]: true }));
       appendLog(`${scenario.name} Supabase'e senkronlandi.`);
     } catch (error) {
-      const message = error instanceof Error ? `DB senkronu basarisiz: ${error.message}` : "DB senkronu basarisiz.";
-      setWarnings((prev) => [
-        ...prev,
-        message,
-      ]);
-      throw new Error(message);
+      setSyncedScenarioIds((prev) => ({ ...prev, [scenarioId]: false }));
+      appendLog(
+        error instanceof Error
+          ? `${scenario.name} yerel calisma alanina alindi; DB senkronu daha sonra tekrar denenecek.`
+          : `${scenario.name} yerel calisma alanina alindi.`
+      );
     }
   };
 
