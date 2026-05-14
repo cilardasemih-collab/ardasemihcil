@@ -14,6 +14,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "file alanina PDF veya Excel yuklenmeli." }, { status: 400 });
     }
 
+    const projectId = String(formData.get("projectId") ?? "").trim();
+    const projectName = String(formData.get("projectName") ?? "").trim();
+    const assumptionKind = String(formData.get("assumptionKind") ?? "project-assumption").trim();
     const arrayBuffer = await file.arrayBuffer();
     const result = await processDocumentToVectorStore({
       fileName: file.name,
@@ -21,6 +24,9 @@ export async function POST(request: NextRequest) {
       buffer: Buffer.from(arrayBuffer),
       metadata: {
         uploadedAt: new Date().toISOString(),
+        projectId: projectId || null,
+        projectName: projectName || null,
+        assumptionKind,
       },
     });
 

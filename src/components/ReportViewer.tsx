@@ -20,6 +20,7 @@ type ScenarioSummarySnapshot = {
     name: string;
     projectName: string;
     location: string | null;
+    projectContext?: Record<string, unknown>;
   };
   summary: {
     rowCount: number;
@@ -57,6 +58,15 @@ const getScenarioSummary = (sections: ReportSectionRecord[]) => {
 const numberFmt = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(value) : "-";
 
+const benchmarkForBuildingType = (buildingType: unknown) => {
+  const normalized = String(buildingType ?? "").toLocaleLowerCase("tr-TR");
+  if (normalized.includes("hastane")) return { label: "Saglik yapisi norm araligi", low: 220, high: 420 };
+  if (normalized.includes("okul")) return { label: "Egitim yapisi norm araligi", low: 80, high: 170 };
+  if (normalized.includes("otel")) return { label: "Konaklama norm araligi", low: 180, high: 320 };
+  if (normalized.includes("konut")) return { label: "Konut norm araligi", low: 70, high: 150 };
+  return { label: "Ofis/ticari norm araligi", low: 90, high: 220 };
+};
+
 const sectionCardStyles = [
   "border-cyan-200 bg-cyan-50/70",
   "border-emerald-200 bg-emerald-50/70",
@@ -91,6 +101,17 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
         })),
       ].slice(0, 8)
     : [];
+  const floorArea = scenarioSummary?.scenario.projectContext?.floorAreaM2;
+  const floorAreaM2 = typeof floorArea === "number" && Number.isFinite(floorArea) && floorArea > 0 ? floorArea : null;
+  const annualEnergy =
+    (scenarioSummary?.summary.metrics.heatingLoad.sum ?? 0) + (scenarioSummary?.summary.metrics.coolingLoad.sum ?? 0);
+  const energyIntensity = floorAreaM2 ? annualEnergy / floorAreaM2 : null;
+  const benchmark = benchmarkForBuildingType(scenarioSummary?.scenario.projectContext?.buildingType);
+  const benchmarkData = [
+    { name: "Alt norm", value: benchmark.low },
+    { name: "Ust norm", value: benchmark.high },
+    { name: "Dosya", value: energyIntensity ?? 0 },
+  ];
 
   const exportPdf = async () => {
     if (!exportRootRef.current || sections.length === 0) return;
@@ -195,6 +216,28 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
                     <Bar dataKey="cooling" name="Sogutma" fill="#2563eb" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+            ) : null}
+            {energyIntensity !== null ? (
+              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-900">Sektor Normu Karsilastirmasi</p>
+                    <p className="text-xs text-slate-600">{benchmark.label} · kWh/m2-yil</p>
+                  </div>
+                  <p className="text-lg font-black text-slate-900">{numberFmt(energyIntensity)} kWh/m2-yil</p>
+                </div>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={benchmarkData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#fde68a" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="value" name="Enerji Yogunlugu" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             ) : null}
           </article>

@@ -22,7 +22,7 @@ const sectionPayloadSchema = z.object({
   summary: z.string(),
 });
 
-const SECTION_GENERATION_TIMEOUT_MS = 45000;
+const SECTION_GENERATION_TIMEOUT_MS = 90000;
 type SectionMemoryItem = { title: string; summary: string };
 
 const sectionPromptForLanguage = (language: "tr" | "en") =>
@@ -83,7 +83,8 @@ const buildSectionPrompt = (input: {
     "Retrieved technical context:",
     input.retrievedContext,
     "Write this section as final client-facing report prose, not a draft.",
-    "Target roughly 550-850 words. Use clear subheadings, short technical paragraphs, compact tables when helpful, and explicit engineering interpretation.",
+    "Target roughly 900-1400 words. Use clear subheadings, short technical paragraphs, compact tables when helpful, and explicit engineering interpretation.",
+    "Never use the words AI, yapay zeka, model limitation, fallback, prompt, or service failure in the report body.",
     "Finish with 2-4 actionable engineering notes specific to this section.",
   ].join("\n\n");
 };
@@ -528,7 +529,7 @@ export async function generateSingleReportSection(input: {
       }),
       responseMimeType: "application/json",
       temperature: 0.2,
-      maxOutputTokens: 2200,
+      maxOutputTokens: 3800,
       timeoutMs: SECTION_GENERATION_TIMEOUT_MS,
     });
 

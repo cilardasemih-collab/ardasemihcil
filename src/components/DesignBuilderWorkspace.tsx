@@ -51,6 +51,14 @@ import { REPORT_SECTION_DEFINITIONS, type ReportSectionRecord } from "@/types/re
 type WizardStep = "project" | "upload" | "preview" | "reports" | "comparison";
 type UploadState = "idle" | "parsing" | "done" | "error";
 type ReportRunStatus = "idle" | "generating" | "completed" | "failed";
+type ProjectAssumptionDoc = {
+  id: string;
+  projectId: string;
+  name: string;
+  kind: string;
+  uploadedAt: string;
+  chunkCount: number;
+};
 
 const seedProjects: Project[] = [
   {
@@ -71,6 +79,7 @@ const STORAGE_KEYS = {
   selectedProjectId: "designbuilder-workspace-selected-project",
   reportGroups: "designbuilder-workspace-report-groups",
   reportStatuses: "designbuilder-workspace-report-statuses",
+  assumptionDocs: "designbuilder-workspace-assumption-docs",
 } as const;
 
 const stepDefinitions: Array<{ key: WizardStep; label: string; detail: string }> = [
@@ -131,6 +140,9 @@ export default function DesignBuilderWorkspace() {
   const [newProjectOccupancy, setNewProjectOccupancy] = useState("");
   const [newProjectWeatherFile, setNewProjectWeatherFile] = useState("");
   const [newProjectDesignGoal, setNewProjectDesignGoal] = useState("");
+  const [assumptionDocs, setAssumptionDocs] = useState<ProjectAssumptionDoc[]>([]);
+  const [assumptionUploadState, setAssumptionUploadState] = useState("");
+  const [uValueDrafts, setUValueDrafts] = useState<Record<string, Record<string, string>>>({});
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [isDragging, setIsDragging] = useState(false);
   const [progressValue, setProgressValue] = useState(0);
@@ -208,6 +220,7 @@ export default function DesignBuilderWorkspace() {
     const storedSynced = readStorage<Record<string, boolean>>(STORAGE_KEYS.synced, {});
     const storedReportGroups = readStorage<Record<string, string>>(STORAGE_KEYS.reportGroups, {});
     const storedReportStatuses = readStorage<Record<string, ReportRunStatus>>(STORAGE_KEYS.reportStatuses, {});
+    const storedAssumptionDocs = readStorage<ProjectAssumptionDoc[]>(STORAGE_KEYS.assumptionDocs, []);
     const storedSelectedProjectId = readStorage<string>(STORAGE_KEYS.selectedProjectId, seedProjects[0]?.id ?? "");
 
     if (storedProjects.length > 0) {
@@ -229,6 +242,7 @@ export default function DesignBuilderWorkspace() {
     setSyncedScenarioIds(storedSynced);
     setReportGroupByScenarioId(storedReportGroups);
     setReportStatusByScenarioId(storedReportStatuses);
+    setAssumptionDocs(storedAssumptionDocs);
     if (storedSelectedProjectId) setSelectedProjectId(storedSelectedProjectId);
     setIsStorageReady(true);
   }, []);
@@ -272,8 +286,9 @@ export default function DesignBuilderWorkspace() {
     window.localStorage.setItem(STORAGE_KEYS.synced, JSON.stringify(syncedScenarioIds));
     window.localStorage.setItem(STORAGE_KEYS.reportGroups, JSON.stringify(reportGroupByScenarioId));
     window.localStorage.setItem(STORAGE_KEYS.reportStatuses, JSON.stringify(reportStatusByScenarioId));
+    window.localStorage.setItem(STORAGE_KEYS.assumptionDocs, JSON.stringify(assumptionDocs));
     window.localStorage.setItem(STORAGE_KEYS.selectedProjectId, JSON.stringify(selectedProjectId));
-  }, [isStorageReady, reportGroupByScenarioId, reportStatusByScenarioId, selectedProjectId, syncedScenarioIds]);
+  }, [assumptionDocs, isStorageReady, reportGroupByScenarioId, reportStatusByScenarioId, selectedProjectId, syncedScenarioIds]);
 
   useEffect(() => {
     if (!projects.some((project) => project.id === selectedProjectId)) {
@@ -287,8 +302,90 @@ export default function DesignBuilderWorkspace() {
     }
   }, [projectScenarios, selectedPreviewScenarioId]);
 
+  useEffect(() => {
+    setUValueDrafts((prev) => {
+      const next = { ...prev };
+      for (const scenario of scenarios) {
+        if (!next[scenario.id]) {
+          next[scenario.id] = {
+            wall: String(scenario.u_values?.wall ?? ""),
+            roof: String(scenario.u_values?.roof ?? ""),
+            window: String(scenario.u_values?.window ?? ""),
+            floor: String(scenario.u_values?.floor ?? ""),
+          };
+        }
+      }
+      return next;
+    });
+  }, [scenarios]);
+
   const appendLog = (line: string) => {
     setWorkflowLog((prev) => [`${new Date().toLocaleTimeString("tr-TR")} - ${line}`, ...prev].slice(0, 12));
+  };
+
+  const updateScenarioUValue = (scenarioId: string, key: "wall" | "roof" | "window" | "floor", value: string) => {
+    setUValueDrafts((prev) => ({
+      ...prev,
+      [scenarioId]: {
+        ...(prev[scenarioId] ?? {}),
+        [key]: value,
+      },
+    }));
+    const numeric = Number(value.replace(",", "."));
+    setScenarios((prev) =>
+      prev.map((scenario) => {
+        if (scenario.id !== scenarioId) return scenario;
+        const nextUValues = { ...(scenario.u_values ?? {}) };
+        if (value.trim() && Number.isFinite(numeric)) {
+          nextUValues[key] = numeric;
+        } else {
+          delete nextUValues[key];
+        }
+        return { ...scenario, u_values: nextUValues };
+      })
+    );
+    setSyncedScenarioIds((prev) => ({ ...prev, [scenarioId]: false }));
+  };
+
+  const uploadAssumptionDocs = async (files: FileList | File[]) => {
+    if (!selectedProject) return;
+    const uploadFiles = Array.from(files).filter((file) => /\.(pdf|xlsx|xls)$/i.test(file.name));
+    if (uploadFiles.length === 0) {
+      setAssumptionUploadState("PDF veya Excel kabul dosyasi sec.");
+      return;
+    }
+
+    setAssumptionUploadState(`${uploadFiles.length} kabul dosyasi yukleniyor...`);
+    for (const file of uploadFiles) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("projectId", selectedProject.id);
+      formData.append("projectName", selectedProject.name);
+      formData.append("assumptionKind", "project-assumption");
+
+      const response = await fetch("/api/documents/ingest", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string; chunkCount?: number };
+      if (!response.ok || !payload.success) {
+        setAssumptionUploadState(payload.error ?? `${file.name} yuklenemedi.`);
+        return;
+      }
+
+      setAssumptionDocs((prev) => [
+        {
+          id: crypto.randomUUID(),
+          projectId: selectedProject.id,
+          name: file.name,
+          kind: "Proje kabulu / referans",
+          uploadedAt: new Date().toISOString(),
+          chunkCount: payload.chunkCount ?? 0,
+        },
+        ...prev,
+      ]);
+    }
+    setAssumptionUploadState("Kabul dosyalari projeye eklendi ve rapor baglamina hazirlandi.");
   };
 
   const handleCreateProject = () => {
@@ -480,9 +577,22 @@ export default function DesignBuilderWorkspace() {
     return payload.sections;
   };
 
+  const fetchReportSectionsByScenarioId = async (scenarioId: string) => {
+    const response = await fetch(`/api/reports?scenarioId=${encodeURIComponent(scenarioId)}`, { cache: "no-store" });
+    const payload = (await response.json().catch(() => ({}))) as {
+      success?: boolean;
+      sections?: ReportSectionRecord[];
+      error?: string;
+    };
+    if (!response.ok || !payload.success || !Array.isArray(payload.sections)) {
+      throw new Error(payload.error ?? "Senaryo rapor bolumleri okunamadi.");
+    }
+    return payload.sections;
+  };
+
   const waitForReportCompletion = async (reportGroupId: string, scenarioId: string) => {
     const startedAt = Date.now();
-    while (Date.now() - startedAt < 300000) {
+    while (Date.now() - startedAt < 1200000) {
       const sections = await fetchReportSections(reportGroupId);
       setReportSections(sections);
       const allCompleted =
@@ -555,6 +665,7 @@ export default function DesignBuilderWorkspace() {
 
     setActiveReportTitle(payload.reportTitle ?? activeReportTitle);
     const sections = await waitForReportCompletion(reportGroupId, scenario.id);
+    setReportGroupByScenarioId((prev) => ({ ...prev, [scenario.id]: reportGroupId }));
     appendLog(`${scenario.name} raporu tamamlandi.`);
     return { reportGroupId, sections };
   };
@@ -572,10 +683,38 @@ export default function DesignBuilderWorkspace() {
       const scenario = scenarios.find((item) => item.id === scenarioId);
       const project = projects.find((item) => item.id === scenario?.project_id);
       const rows = scenarioRowsById[scenarioId];
-      const reportGroupId = reportGroupByScenarioId[scenarioId];
-      if (!scenario || !project || !rows?.length || !reportGroupId) continue;
+      let reportGroupId = reportGroupByScenarioId[scenarioId];
+      if (!scenario || !project || !rows?.length) continue;
 
-      const sections = await fetchReportSections(reportGroupId);
+      let sections: ReportSectionRecord[] = [];
+      if (reportGroupId) {
+        sections = await fetchReportSections(reportGroupId);
+      } else {
+        const scenarioSections = await fetchReportSectionsByScenarioId(scenarioId);
+        const completedGroups = new Map<string, ReportSectionRecord[]>();
+        for (const section of scenarioSections) {
+          const group = completedGroups.get(section.reportGroupId) ?? [];
+          group.push(section);
+          completedGroups.set(section.reportGroupId, group);
+        }
+        const bestGroup = [...completedGroups.entries()]
+          .map(([groupId, groupSections]) => ({ groupId, groupSections }))
+          .sort((a, b) => {
+            const completedDelta =
+              b.groupSections.filter((section) => section.status === "completed").length -
+              a.groupSections.filter((section) => section.status === "completed").length;
+            if (completedDelta !== 0) return completedDelta;
+            return new Date(b.groupSections[0]?.updatedAt ?? 0).getTime() - new Date(a.groupSections[0]?.updatedAt ?? 0).getTime();
+          })[0];
+        if (bestGroup) {
+          reportGroupId = bestGroup.groupId;
+          sections = bestGroup.groupSections.sort((a, b) => a.sectionOrder - b.sectionOrder);
+          setReportGroupByScenarioId((prev) => ({ ...prev, [scenarioId]: bestGroup.groupId }));
+        }
+      }
+
+      const completedSections = sections.filter((section) => section.status === "completed");
+      if (completedSections.length < REPORT_SECTION_DEFINITIONS.length) continue;
       payloads.push({
         summary: buildScenarioSummary({
           scenario: {
@@ -595,7 +734,7 @@ export default function DesignBuilderWorkspace() {
           })),
         }),
         costEstimate: scenario.cost_estimate,
-        reportMarkdown: buildReportMarkdown(sections),
+        reportMarkdown: buildReportMarkdown(completedSections),
       });
     }
     return payloads;
@@ -825,6 +964,48 @@ export default function DesignBuilderWorkspace() {
                 Proje Olustur
               </Button>
             </div>
+            {selectedProject ? (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-900">Proje Kabulleri ve Referans Dosyalari</p>
+                    <p className="text-xs text-slate-600">
+                      PDF/Excel yonetmelik, akademik makale, maliyet kabul tablosu veya ofis standardi yukle; secili proje raporlarinda kaynak olarak kullanilir.
+                    </p>
+                  </div>
+                  <label className="cursor-pointer rounded-xl bg-violet-700 px-4 py-2 text-sm font-bold text-white hover:bg-violet-600">
+                    Kabul Dosyasi Yukle
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.xlsx,.xls,application/pdf"
+                      className="hidden"
+                      onChange={(event) => {
+                        if (event.target.files) void uploadAssumptionDocs(event.target.files);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                {assumptionUploadState ? <p className="mt-3 text-xs font-semibold text-violet-900">{assumptionUploadState}</p> : null}
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {assumptionDocs.filter((doc) => doc.projectId === selectedProject.id).length === 0 ? (
+                    <p className="text-xs text-slate-600">Bu proje icin henuz kabul dosyasi yok.</p>
+                  ) : (
+                    assumptionDocs
+                      .filter((doc) => doc.projectId === selectedProject.id)
+                      .map((doc) => (
+                        <article key={doc.id} className="rounded-xl border border-violet-200 bg-white p-3">
+                          <p className="text-xs font-black text-slate-900">{doc.name}</p>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            {doc.kind} · {doc.chunkCount} parca · {new Date(doc.uploadedAt).toLocaleDateString("tr-TR")}
+                          </p>
+                        </article>
+                      ))
+                  )}
+                </div>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       ) : null}
@@ -959,6 +1140,19 @@ export default function DesignBuilderWorkspace() {
                         <p className="mt-1 text-xs font-semibold text-slate-600">
                           DB: {syncedScenarioIds[scenario.id] ? "Senkron" : "Rapor oncesi tekrar denenecek"}
                         </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {(["wall", "roof", "window", "floor"] as const).map((key) => (
+                            <label key={key} className="text-[11px] font-semibold text-slate-600">
+                              U {key}
+                              <input
+                                value={uValueDrafts[scenario.id]?.[key] ?? ""}
+                                onChange={(event) => updateScenarioUValue(scenario.id, key, event.target.value)}
+                                placeholder="W/m2K"
+                                className="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900"
+                              />
+                            </label>
+                          ))}
+                        </div>
                       </div>
                       <button type="button" onClick={() => removeScenario(scenario.id)} className="text-rose-600">
                         <Trash2 className="h-4 w-4" />

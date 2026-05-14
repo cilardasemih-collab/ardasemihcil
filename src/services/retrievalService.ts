@@ -37,6 +37,15 @@ const buildSearchQueries = (payload: ScenarioSummaryPayload) => {
   if (payload.scenario.location) {
     queries.add(`${payload.scenario.location} iklim bolgesi bina enerjisi standardi`);
   }
+  if (payload.scenario.projectContext?.buildingType) {
+    queries.add(`${String(payload.scenario.projectContext.buildingType)} enerji performansi sektor normu`);
+  }
+  if (payload.scenario.projectContext?.designGoal) {
+    queries.add(`proje hedefi ${String(payload.scenario.projectContext.designGoal)} teknik kabul`);
+  }
+  if (payload.scenario.projectContext?.weatherFile) {
+    queries.add(`iklim dosyasi ${String(payload.scenario.projectContext.weatherFile)} EPW varsayimlari`);
+  }
   if ((payload.summary.metrics.heatingLoad.max ?? 0) > 0) {
     queries.add("isitma yuku sinir degerleri ve enerji performansi");
   }
