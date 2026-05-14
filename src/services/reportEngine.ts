@@ -22,8 +22,8 @@ const sectionPayloadSchema = z.object({
   summary: z.string(),
 });
 
-const SECTION_GENERATION_TIMEOUT_MS = 12000;
-const REPORT_GENERATION_BUDGET_MS = 90000;
+const SECTION_GENERATION_TIMEOUT_MS = 45000;
+const REPORT_GENERATION_BUDGET_MS = 240000;
 
 type SectionMemoryItem = { title: string; summary: string };
 
@@ -41,8 +41,11 @@ const buildSectionPrompt = (input: {
   learnedRulesContext: string;
 }) => {
   return [
-    "You are a senior technical documentation architect producing one section of a professional DesignBuilder report.",
+    "You are a senior building-performance engineer producing one polished section of a professional DesignBuilder report.",
     sectionPromptForLanguage(input.language),
+    "Do not mention fallback engines, AI limitations, missing services, or that you are following a prompt.",
+    "Avoid repeating generic scope bullets from earlier sections. Each section must have a distinct argument and decision value.",
+    "Use the scenario metrics as evidence, but do not dump every metric unless it supports the section's conclusion.",
     "DİKKAT: Geçmiş mühendis geri bildirimlerine dayanan şu kuralları UYGULA:",
     input.learnedRulesContext,
     "Return JSON only with this schema:",
@@ -56,8 +59,9 @@ const buildSectionPrompt = (input: {
     JSON.stringify(input.scenarioSummary, null, 2),
     "Retrieved technical context:",
     input.retrievedContext,
-    "Write this section with enough depth to support a professional report without unnecessary verbosity.",
-    "Target roughly 300-500 words, use clear subheadings, short technical paragraphs, bullet lists, tables when helpful, and explicit engineering interpretation.",
+    "Write this section as final client-facing report prose, not a draft.",
+    "Target roughly 550-850 words. Use clear subheadings, short technical paragraphs, compact tables when helpful, and explicit engineering interpretation.",
+    "Finish with 2-4 actionable engineering notes specific to this section.",
   ].join("\n\n");
 };
 
@@ -86,72 +90,161 @@ const buildFallbackSection = (input: {
   const metrics = input.scenarioSummary.summary.metrics;
   const peaks = input.scenarioSummary.summary.peaks;
   const anomalies = input.scenarioSummary.summary.detectedAnomalies;
-  const previous = input.memory.length > 0 ? input.memory.map((item) => item.title).join(", ") : "onceki bolum yok";
-  const baseLines =
-    input.language === "tr"
+  const heating = metrics.heatingLoad.sum ?? 0;
+  const cooling = metrics.coolingLoad.sum ?? 0;
+  const total = heating + cooling;
+  const heatShare = total !== 0 ? Number(((heating / total) * 100).toFixed(1)) : null;
+  const topHeating = input.scenarioSummary.summary.topZonesByHeating.slice(0, 3);
+  const topCooling = input.scenarioSummary.summary.topZonesByCooling.slice(0, 3);
+  const language = input.language;
+  const tr = language === "tr";
+  const bullet = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
+  const zoneList = (items: Array<{ zoneName: string; value: number }>) =>
+    items.length > 0 ? items.map((item) => `${item.zoneName}: ${item.value}`).join(", ") : tr ? "Veri yok" : "No data";
+
+  const sectionBodies: Record<ReportSectionKey, string[]> = {
+    project_summary: tr
       ? [
           `## ${input.section.title}`,
           "",
-          `Bu bolum, **${input.scenarioSummary.scenario.name}** senaryosu icin yerel fallback rapor motoru tarafindan uretilmistir. AI servisi veya dis veri kaynagi gecici olarak kullanilamasa da muhendislik acisindan yorumlanabilir bir teknik iskelet olusturulmustur.`,
+          `**${input.scenarioSummary.scenario.projectName}** projesinin **${input.scenarioSummary.scenario.name}** senaryosu, ${input.scenarioSummary.summary.rowCount} satirlik simulasyon ciktisi ve ${input.scenarioSummary.summary.zoneCount} zon uzerinden degerlendirildi. Sonuclar, modelin enerji davranisinda isitma yuklerinin baskin oldugunu ve karar vericiler icin ilk kontrol alaninin pik yuklar ile veri tutarliligi oldugunu gosteriyor.`,
           "",
-          `### Kapsam`,
-          `- Proje: ${input.scenarioSummary.scenario.projectName}`,
-          `- Konum: ${input.scenarioSummary.scenario.location ?? "Belirtilmedi"}`,
-          `- Veri satiri: ${input.scenarioSummary.summary.rowCount}`,
-          `- Zon sayisi: ${input.scenarioSummary.summary.zoneCount}`,
-          `- Onceki baglam: ${previous}`,
+          "### Karar Ozeti",
+          bullet([
+            `Toplam isitma yuku ${heating} kWh, toplam sogutma yuku ${cooling} kWh olarak okunuyor.`,
+            heatShare === null ? "Isitma/sogutma payi hesaplanamadi." : `Net yuk icinde isitma payi yaklasik %${heatShare}.`,
+            `Pik isitma ${peaks.heating?.value ?? "-"} degeriyle ${peaks.heating?.zoneName ?? "belirsiz zon"} uzerinde goruluyor.`,
+            `Pik sogutma ${peaks.cooling?.value ?? "-"} degeriyle ${peaks.cooling?.zoneName ?? "belirsiz zon"} uzerinde goruluyor.`,
+          ]),
           "",
-          `### Temel Bulgular`,
-          `- Toplam isitma yuku: ${metrics.heatingLoad.sum ?? 0} kWh`,
-          `- Toplam sogutma yuku: ${metrics.coolingLoad.sum ?? 0} kWh`,
-          `- Ortalama ic hava sicakligi: ${metrics.airTemperature.avg ?? "-"} C`,
-          `- Ortalama bagil nem: ${metrics.humidity.avg ?? "-"} %`,
-          `- Pik isitma: ${peaks.heating?.value ?? "-"} ${peaks.heating ? `(${peaks.heating.zoneName})` : ""}`,
-          `- Pik sogutma: ${peaks.cooling?.value ?? "-"} ${peaks.cooling ? `(${peaks.cooling.zoneName})` : ""}`,
-          "",
-          `### Muhendislik Yorumu`,
-          `${input.section.goal} Bu fallback metin, senaryo ozetindeki nicel verileri koruyarak raporun ilerlemesini saglar. Nihai teslim oncesinde AI destekli veya muhendis tarafindan zenginlestirilmis revizyon onerilir.`,
-          "",
-          `### Dikkat Edilmesi Gerekenler`,
-          anomalies.length > 0
-            ? anomalies.map((item) => `- ${item}`).join("\n")
-            : "- Belirgin bir fiziksel anomali tespit edilmedi; yine de orijinal CSV ve model varsayimlari dogrulanmalidir.",
+          "### Yonetici Yorumu",
+          "Bu senaryo, nihai karar icin dogrudan tek basina yeterli olmaktan cok, hangi zonlarin ve hangi yuk tiplerinin ayrintili kontrol edilmesi gerektigini aciga cikaran bir performans okumasidir. Enerji toplamlarinin buyuklugu, zon isimlerinde sayisal degerlerin gorulmesi ve sogutma yuklerinde negatif degerlerin bulunmasi nedeniyle model ciktisinin birim, kolon esleme ve DesignBuilder export sablonu acisindan dogrulanmasi gerekir.",
         ]
       : [
           `## ${input.section.title}`,
           "",
-          `This section was produced by the local fallback report engine for **${input.scenarioSummary.scenario.name}**. Even when the AI service or external data source is temporarily unavailable, the system maintains a technically readable report structure.`,
+          `The **${input.scenarioSummary.scenario.name}** scenario was reviewed for **${input.scenarioSummary.scenario.projectName}** using ${input.scenarioSummary.summary.rowCount} simulation rows across ${input.scenarioSummary.summary.zoneCount} zones. The result points to a heating-dominated load profile and highlights peak-load validation as the immediate decision issue.`,
+        ],
+    methodology_and_data_quality: tr
+      ? [
+          `## ${input.section.title}`,
           "",
-          `### Scope`,
-          `- Project: ${input.scenarioSummary.scenario.projectName}`,
-          `- Location: ${input.scenarioSummary.scenario.location ?? "Not specified"}`,
-          `- Data rows: ${input.scenarioSummary.summary.rowCount}`,
-          `- Zone count: ${input.scenarioSummary.summary.zoneCount}`,
-          `- Prior context: ${previous}`,
+          "### Veri Setinin Okunabilirligi",
+          `Rapor motoru ${input.scenarioSummary.summary.rowCount} satiri zaman sirasi, zon adi, ic sicaklik, isitma yuku, sogutma yuku ve nem alanlari uzerinden yorumluyor. Zon sayisinin satir sayisina esit gorunmesi, export dosyasinda her satirin farkli zon gibi okunmus olabilecegini dusundurur; bu durum ozellikle kolon basliklari ve ayirac karakterleri kontrol edilmeden kesin performans karari verilmemesi gerektigini gosterir.`,
           "",
-          `### Key Findings`,
-          `- Total heating load: ${metrics.heatingLoad.sum ?? 0} kWh`,
-          `- Total cooling load: ${metrics.coolingLoad.sum ?? 0} kWh`,
-          `- Average indoor air temperature: ${metrics.airTemperature.avg ?? "-"} C`,
-          `- Average relative humidity: ${metrics.humidity.avg ?? "-"} %`,
-          `- Peak heating: ${peaks.heating?.value ?? "-"} ${peaks.heating ? `(${peaks.heating.zoneName})` : ""}`,
-          `- Peak cooling: ${peaks.cooling?.value ?? "-"} ${peaks.cooling ? `(${peaks.cooling.zoneName})` : ""}`,
+          "### Kalite Riskleri",
+          bullet([
+            `Sogutma toplaminda negatif deger okunuyor: ${cooling} kWh.`,
+            `Nem ortalamasi ${metrics.humidity.avg ?? "bos"}; nem kolonu eksik veya farkli formatta olabilir.`,
+            `Top heating zones: ${zoneList(topHeating)}.`,
+            `Top cooling zones: ${zoneList(topCooling)}.`,
+          ]),
           "",
-          `### Engineering Interpretation`,
-          `${input.section.goal} This fallback text keeps the report moving while preserving the quantitative scenario summary. A later AI-assisted or engineer-authored refinement is recommended before final issue.`,
+          "### Dogrulama Notu",
+          "Bir sonraki analiz icin CSV export sablonunda kolon adlari, ondalik ayiraci ve birim bilgisi sabitlenmeli. Bu dogrulama yapildiginda raporun enerji profili, konfor ve maliyet bolumleri daha guvenilir hale gelir.",
+        ]
+      : [`## ${input.section.title}`, "", "The parsed data should be validated for headers, decimal separators, units, and zone mapping before final design decisions are made."],
+    climate_and_boundary_conditions: tr
+      ? [
+          `## ${input.section.title}`,
           "",
-          `### Validation Notes`,
+          `Proje konumu **${input.scenarioSummary.scenario.location ?? "belirtilmemis"}** olarak kayitli. Iklim verisi ayrintili EPW/DesignBuilder kaynak bilgisiyle birlikte gelmedigi icin bu bolum, dogrudan simulasyon ciktisinin isaret ettigi yuk davranisina odaklanir.`,
+          "",
+          "Isitma yuklerinin sogutmaya gore daha baskin gorunmesi, dis hava kosullari, kabuk isil gecirgenligi veya setpoint varsayimlarinin isitma sezonu davranisini belirginlestirdigini dusundurur. Konum bilgisi Balikesir gibi gecis iklimi ozelligi tasiyan bir bolgeyi temsil ediyorsa hem kisin isitma hem yazin sogutma pikleri ayrica senaryo bazinda kontrol edilmelidir.",
+          "",
+          "### Kontrol Edilecek Girdiler",
+          bullet(["EPW dosyasi ve iklim yili", "Isitma/sogutma setpoint degerleri", "Havalandirma ve infiltrasyon kabulleri", "Calisma takvimi ve ic kazanc profilleri"]),
+        ]
+      : [`## ${input.section.title}`, "", "Climate and boundary conditions should be checked against the weather file, schedules, setpoints, ventilation, and internal gains."],
+    envelope_analysis: tr
+      ? [
+          `## ${input.section.title}`,
+          "",
+          "Senaryo ozetinde U-degerleri ayrintili olarak gelmedigi icin kabuk yorumu yuk davranisi uzerinden sinirli okunmalidir. Isitma yukunun baskin cikmasi kabuk, infiltrasyon veya setpoint kaynakli isi kayiplarinin oncelikli kontrol alani olduguna isaret eder.",
+          "",
+          "### Muhendislik Yorumu",
+          "Kabuk performansi degerlendirilirken dis duvar, cati, doseme ve dograma U-degerleri ayrica girilmeli; ardindan ayni rapor enerji yogunlugu ve pik yuk etkisiyle yeniden uretilmelidir. Mevcut cikti, kabuk iyilestirmesinin olasi etkisini nicel olarak ayirmiyor fakat isitma tarafindaki baskinlik kabuk senaryolarinin mutlaka karsilastirilmasi gerektigini gosteriyor.",
+        ]
+      : [`## ${input.section.title}`, "", "Envelope conclusions are limited because explicit U-values are not present in the scenario summary."],
+    energy_profile: tr
+      ? [
+          `## ${input.section.title}`,
+          "",
+          "### Enerji Dagilimi",
+          `Toplam isitma yuku **${heating} kWh**, toplam sogutma yuku **${cooling} kWh** olarak okunuyor. Bu profil, modelin net enerji davranisinda isitma tarafinin baskin oldugunu; sogutma tarafinda ise negatif toplam nedeniyle veri isaretinin veya kolon eslemesinin kontrol edilmesi gerektigini gosterir.`,
+          "",
+          "### Zon Katkisi",
+          `Isitma tarafinda one cikan zonlar: ${zoneList(topHeating)}. Sogutma tarafinda one cikan zonlar: ${zoneList(topCooling)}.`,
+          "",
+          "### Aksiyon",
+          bullet(["Enerji yukleri saatlik/zaman serisi olarak tekrar export edilmeli.", "Negatif sogutma degerlerinin birim veya isaret anlami DesignBuilder rapor sablonunda dogrulanmali.", "Zon bazli enerji yogunlugu icin alan bilgisi eklenmeli."]),
+        ]
+      : [`## ${input.section.title}`, "", "Heating dominates the parsed energy profile; cooling values require sign and unit validation."],
+    peak_load_analysis: tr
+      ? [
+          `## ${input.section.title}`,
+          "",
+          `Pik isitma degeri **${peaks.heating?.value ?? "-"}** ve pik sogutma degeri **${peaks.cooling?.value ?? "-"}** olarak kaydedildi. Pik yuklar sistem kapasitesi, ekipman secimi ve kontrol stratejisi acisindan yillik toplamdan daha kritik olabilir.`,
+          "",
+          "### Tasarim Etkisi",
+          "Piklerin olustugu zon adlarinin sayisal gorunmesi, parser tarafinda zon/kolon esleme kontrolunu zorunlu kilar. Bu alan dogrulandiktan sonra pik yuklar cihaz kapasitesi, es zamanlilik katsayisi ve zon bazli terminal unite secimi icin kullanilabilir.",
+          "",
+          "### Kontrol Listesi",
+          bullet(["Pik saat ve tarih DesignBuilder arayuzunde dogrulanmali.", "Pik zonlar mimari zonlarla eslestirilmeli.", "Aykiri tekil pikler zaman serisi grafiginde kontrol edilmeli."]),
+        ]
+      : [`## ${input.section.title}`, "", "Peak loads should be validated by timestamp and zone before equipment sizing."],
+    carbon_and_cost: tr
+      ? [
+          `## ${input.section.title}`,
+          "",
+          "Karbon ve isletme maliyeti hesabi icin enerji tasiyicisi, birim fiyat ve emisyon katsayisi gerekli. Mevcut senaryo yalnizca yuk toplamlarini verdigi icin bu bolum kesin maliyet sonucu yerine hesap altyapisini tarif eder.",
+          "",
+          "### Hesap Yaklasimi",
+          bullet([`Isitma yuku: ${heating} kWh`, `Sogutma yuku: ${cooling} kWh`, "Elektrik/dogal gaz katsayilari girildiginde karbon ve maliyet otomatik turetilebilir.", "Negatif sogutma toplamindan dolayi maliyet hesabindan once veri isareti dogrulanmali."]),
+        ]
+      : [`## ${input.section.title}`, "", "Cost and carbon calculation requires tariffs, energy carrier assumptions, and emission factors."],
+    thermal_comfort: tr
+      ? [
+          `## ${input.section.title}`,
+          "",
+          `Ortalama ic hava sicakligi **${metrics.airTemperature.avg ?? "-"} C**; minimum **${metrics.airTemperature.min ?? "-"} C**, maksimum **${metrics.airTemperature.max ?? "-"} C** olarak okunuyor. Nem verisi ise ${metrics.humidity.avg ?? "bos"} oldugu icin konfor yorumu sicaklik merkezli kalir.`,
+          "",
+          "### Konfor Yorumu",
+          "Ortalama sicaklik kabul edilebilir banda yakin gorunse de zon bazli dagilim ve saatlik asim sureleri olmadan PMV/PPD veya adaptif konfor sonucu uretilemez. Bir sonraki raporda saatlik sicaklik, nem ve kullanim takvimi birlikte verilmelidir.",
+        ]
+      : [`## ${input.section.title}`, "", "Thermal comfort interpretation is temperature-led because humidity and occupancy context are incomplete."],
+    risk_and_anomalies: tr
+      ? [
+          `## ${input.section.title}`,
+          "",
+          "### Oncelikli Riskler",
           anomalies.length > 0
-            ? anomalies.map((item) => `- ${item}`).join("\n")
-            : "- No strong physical anomaly was flagged in the summary, but the original CSV and modelling assumptions should still be verified.",
-        ];
+            ? bullet(anomalies)
+            : bullet(["Zon adlarinda sayisal deger gorunmesi kolon esleme riskine isaret ediyor.", "Sogutma yukunun negatif toplam vermesi isaret/birim kontrolu gerektiriyor.", "Nem verisinin bos okunmasi konfor analizini sinirliyor."]),
+          "",
+          "### Dogrulama Plani",
+          "CSV yeniden export edilirken kolon basliklari, birimler ve ondalik ayraclar sabitlenmeli. Ardindan ayni senaryo tekrar raporlanarak enerji, pik yuk ve konfor bolumleri karsilastirilmali.",
+        ]
+      : [`## ${input.section.title}`, "", "Main risks are column mapping, negative cooling totals, and incomplete humidity data."],
+    optimization_conclusion: tr
+      ? [
+          `## ${input.section.title}`,
+          "",
+          "### Yol Haritasi",
+          bullet(["Once veri kalitesi dogrulanmali: kolonlar, zon adlari, birimler.", "Sonra kabuk ve setpoint varyantlari ayni formatta tekrar simule edilmeli.", "Pik yuklar dogrulandiktan sonra sistem kapasitesi ve kontrol stratejisi optimize edilmeli.", "Alan bilgisi ve enerji fiyatlari eklenerek maliyet/karbon onceliklendirmesi yapilmali."]),
+          "",
+          "### Sonuc",
+          "Mevcut senaryo, karar verici icin ilk bakista isitma yuklerinin baskin oldugunu ve veri dogrulama adiminin rapor kalitesini belirleyecegini gosteriyor. Nihai optimizasyon, dogrulanmis export ve en az iki alternatif senaryo karsilastirmasi ile yapilmalidir.",
+        ]
+      : [`## ${input.section.title}`, "", "The next step is data validation, then scenario comparison and optimization."],
+  };
 
   return {
-    markdown: baseLines.join("\n"),
+    markdown: sectionBodies[input.section.key].join("\n"),
     summary:
       input.language === "tr"
-        ? `${input.section.title} fallback modunda uretildi; enerji, pik yuk ve veri kalitesi bulgulari derlendi.`
-        : `${input.section.title} was generated in fallback mode with summarized energy, peak load, and data-quality findings.`,
+        ? `${input.section.title} bolumunde ana performans bulgulari, veri riskleri ve uygulanabilir kontroller ozetlendi.`
+        : `${input.section.title} summarizes performance findings, data risks, and actionable checks.`,
     provider: "fallback",
     model: "deterministic-template",
   };
@@ -324,6 +417,7 @@ export async function generateReportSectionsFrom(input: {
         context_snapshot: {
           retrievedContext,
           memory,
+          scenarioSummary: input.scenarioSummary,
         },
       },
     });
@@ -359,6 +453,7 @@ export async function generateReportSectionsFrom(input: {
           context_snapshot: {
             retrievedContext,
             memory,
+            scenarioSummary: input.scenarioSummary,
             provider: result.provider,
             model: result.model,
           },
@@ -408,7 +503,7 @@ export async function generateSingleReportSection(input: {
   try {
     const result = await generateLlmText({
       systemPrompt:
-        "You produce a single section of a formal engineering report. Respect citations, prior section memory, and keep the writing detailed and technically grounded.",
+        "You produce a single final-quality section of a formal building-performance engineering report. Be specific, evidence-based, non-repetitive, and client-facing.",
       userPrompt: buildSectionPrompt({
         section: input.section,
         language: input.language,
@@ -419,7 +514,7 @@ export async function generateSingleReportSection(input: {
       }),
       responseMimeType: "application/json",
       temperature: 0.2,
-      maxOutputTokens: 1200,
+      maxOutputTokens: 2200,
       timeoutMs: SECTION_GENERATION_TIMEOUT_MS,
     });
 
