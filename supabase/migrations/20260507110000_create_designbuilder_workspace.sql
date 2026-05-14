@@ -49,12 +49,14 @@ alter table public.scenarios enable row level security;
 alter table public.simulation_data enable row level security;
 alter table public.user_feedback enable row level security;
 
+drop policy if exists "Users can manage own projects" on public.projects;
 create policy "Users can manage own projects"
 on public.projects
 for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
+drop policy if exists "Users can manage scenarios in own projects" on public.scenarios;
 create policy "Users can manage scenarios in own projects"
 on public.scenarios
 for all
@@ -75,6 +77,7 @@ with check (
   )
 );
 
+drop policy if exists "Users can manage simulation rows in own scenarios" on public.simulation_data;
 create policy "Users can manage simulation rows in own scenarios"
 on public.simulation_data
 for all
@@ -97,6 +100,7 @@ with check (
   )
 );
 
+drop policy if exists "Authenticated users can read and resolve feedback" on public.user_feedback;
 create policy "Authenticated users can read and resolve feedback"
 on public.user_feedback
 for all

@@ -23,16 +23,19 @@ on public.reports (report_group_id, section_key);
 
 alter table public.reports enable row level security;
 
+drop policy if exists "Authenticated users can read reports" on public.reports;
 create policy "Authenticated users can read reports"
 on public.reports
 for select
 using (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can insert reports" on public.reports;
 create policy "Authenticated users can insert reports"
 on public.reports
 for insert
 with check (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can update reports" on public.reports;
 create policy "Authenticated users can update reports"
 on public.reports
 for update

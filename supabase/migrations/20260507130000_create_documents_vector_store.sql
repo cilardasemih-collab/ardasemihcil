@@ -39,11 +39,13 @@ $$;
 
 alter table public.documents enable row level security;
 
+drop policy if exists "Authenticated users can read documents" on public.documents;
 create policy "Authenticated users can read documents"
 on public.documents
 for select
 using (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can insert documents" on public.documents;
 create policy "Authenticated users can insert documents"
 on public.documents
 for insert

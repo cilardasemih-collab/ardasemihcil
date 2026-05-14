@@ -48,16 +48,19 @@ $$;
 
 alter table public.learned_rules enable row level security;
 
+drop policy if exists "Authenticated users can read learned rules" on public.learned_rules;
 create policy "Authenticated users can read learned rules"
 on public.learned_rules
 for select
 using (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can insert learned rules" on public.learned_rules;
 create policy "Authenticated users can insert learned rules"
 on public.learned_rules
 for insert
 with check (auth.role() = 'authenticated');
 
+drop policy if exists "Authenticated users can update learned rules" on public.learned_rules;
 create policy "Authenticated users can update learned rules"
 on public.learned_rules
 for update
