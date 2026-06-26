@@ -19,6 +19,9 @@ export default function Page() {
               <Link href="/designbuilder" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
                 DesignBuilder
               </Link>
+              <Link href="/gecmis" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
+                Gecmis
+              </Link>
               <Link href="/qr-olusturucu" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
                 QR Olusturucu
               </Link>

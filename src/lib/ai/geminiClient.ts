@@ -12,11 +12,11 @@ type GeminiResult = {
 };
 
 const DEFAULT_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash-lite",
+  "gemini-3.5-flash",
   "gemini-2.5-flash",
-  "gemini-2.0-flash",
   "gemini-1.5-flash-latest",
-  "gemini-2.5-pro",
-  "gemini-1.5-pro-latest",
   "gemini-1.5-flash",
 ];
 
@@ -24,7 +24,7 @@ const getModelCandidates = (): string[] => {
   const fromEnv = String(process.env.GOOGLE_AI_MODEL ?? "")
     .split(",")
     .map((item) => item.trim())
-    .filter(Boolean);
+    .filter((item) => item && item.toLowerCase().includes("flash") && !item.toLowerCase().includes("pro"));
 
   return Array.from(new Set([...fromEnv, ...DEFAULT_MODELS]));
 };

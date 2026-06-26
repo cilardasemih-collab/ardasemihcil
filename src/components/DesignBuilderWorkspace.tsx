@@ -767,6 +767,7 @@ export default function DesignBuilderWorkspace() {
         strategistSummary?: string;
         baselineScenarioId?: string;
         currency?: OptimizationComparisonResult["currency"];
+        saveWarning?: string | null;
       };
 
       if (
@@ -792,7 +793,7 @@ export default function DesignBuilderWorkspace() {
         baselineScenarioId: payload.baselineScenarioId,
         currency: payload.currency,
       });
-      appendLog("Karsilastirma raporu tamamlandi.");
+      appendLog(payload.saveWarning ? `Karsilastirma tamamlandi; kayit uyarisi: ${payload.saveWarning}` : "Karsilastirma raporu kaydedildi.");
       setActiveStep("comparison");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Karsilastirma raporu uretilemedi.";

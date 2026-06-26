@@ -103,7 +103,7 @@ export default function FileUpload() {
 
     setUploadState("uploading");
     setProgress(12);
-    setMessage("Dosya Supabase Storage'a yukleniyor...");
+    setMessage("CSV dosyasi analiz icin hazirlaniyor...");
     let didSucceed = false;
 
     const progressTimer = window.setInterval(() => {
@@ -114,33 +114,12 @@ export default function FileUpload() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const uploadResponse = await fetch("/api/upload-csv", {
-        method: "POST",
-        body: formData,
-      });
-      const uploadPayload = (await uploadResponse.json().catch(() => ({}))) as {
-        success?: boolean;
-        filePath?: string;
-        fileName?: string;
-        error?: string;
-      };
-
-      if (!uploadResponse.ok || !uploadPayload.success || !uploadPayload.filePath) {
-        throw new Error(uploadPayload.error ?? "Dosya yuklenemedi.");
-      }
-
-      setProgress(100);
-      setUploadState("success");
-      setMessage("Yukleme basarili. Dosya analiz adimina hazir.");
-      didSucceed = true;
-
       setIsAnalyzing(true);
       setMessage("Veri uzman analizinden geciriliyor...");
 
       const analyzeResponse = await fetch("/api/analyze-csv", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filePath: uploadPayload.filePath, fileName: uploadPayload.fileName ?? file.name }),
+        body: formData,
       });
 
       const analyzePayload = (await analyzeResponse.json().catch(() => ({}))) as {
@@ -168,6 +147,10 @@ export default function FileUpload() {
         );
       }
 
+      setProgress(100);
+      setUploadState("success");
+      didSucceed = true;
+
       console.log("[Optimization Summary]", analyzePayload.summary);
       setSummary(analyzePayload.summary ?? null);
       setOeeSummary(analyzePayload.oeeSummary ?? null);
@@ -192,7 +175,7 @@ export default function FileUpload() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Beklenmeyen bir hata olustu.";
       setUploadState("error");
-      setMessage(`Yukleme hatasi: ${errorMessage}`);
+      setMessage(`Analiz hatasi: ${errorMessage}`);
     } finally {
       window.clearInterval(progressTimer);
       setIsAnalyzing(false);
@@ -282,7 +265,7 @@ export default function FileUpload() {
         {uploadState === "success" ? (
           <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
             <CheckCircle2 className="h-4 w-4" />
-            <span>Dosya basariyla yuklendi.</span>
+            <span>CSV basariyla analiz edildi.</span>
           </div>
         ) : null}
 

@@ -43,6 +43,11 @@ type CsvPreviewPayload = {
 const RAW_FILES_BUCKET = "raw-files";
 const MAX_DOWNLOAD_SIZE_BYTES = 25 * 1024 * 1024;
 
+type CsvInput = {
+  content: string;
+  fileName: string;
+};
+
 const buildSystemPrompt = () => {
   return [
     "Sen uzman bir endustriyel enerji verimliligi muhendisisin.",
@@ -272,35 +277,56 @@ const callGeminiForDiagnosis = async (preview: CsvPreview): Promise<AiDiagnosis>
   }
 };
 
+const readCsvInput = async (request: NextRequest, serviceSupabase: ReturnType<typeof createServiceClient>): Promise<CsvInput> => {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const file = formData.get("file");
+
+    if (!(file instanceof File)) {
+      throw new Error("CSV dosyasi gerekli.");
+    }
+
+    if (file.size > MAX_DOWNLOAD_SIZE_BYTES) {
+      throw new Error("CSV dosyasi cok buyuk. Maksimum 25MB desteklenir.");
+    }
+
+    return {
+      content: await file.text(),
+      fileName: file.name || "analysis.csv",
+    };
+  }
+
+  const body = (await request.json().catch(() => ({}))) as AnalyzeCsvBody;
+  const filePath = String(body.filePath ?? "").trim();
+  const fallbackFileName = decodeURIComponent(filePath.split("/").pop() ?? "analysis.csv");
+  const fileName = String(body.fileName ?? "").trim() || fallbackFileName;
+
+  if (!filePath) {
+    throw new Error("filePath zorunludur.");
+  }
+
+  const { data, error } = await serviceSupabase.storage.from(RAW_FILES_BUCKET).download(filePath);
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Dosya Supabase Storage'dan okunamadi.");
+  }
+
+  if (data.size > MAX_DOWNLOAD_SIZE_BYTES) {
+    throw new Error("CSV dosyasi cok buyuk. Maksimum 25MB desteklenir.");
+  }
+
+  return {
+    content: await data.text(),
+    fileName,
+  };
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json().catch(() => ({}))) as AnalyzeCsvBody;
-    const filePath = String(body.filePath ?? "").trim();
-    const fallbackFileName = decodeURIComponent(filePath.split("/").pop() ?? "analysis.csv");
-    const fileName = String(body.fileName ?? "").trim() || fallbackFileName;
-
-    if (!filePath) {
-      return NextResponse.json({ success: false, error: "filePath zorunludur." }, { status: 400 });
-    }
-
     const serviceSupabase = createServiceClient();
-    const { data, error } = await serviceSupabase.storage.from(RAW_FILES_BUCKET).download(filePath);
-
-    if (error || !data) {
-      return NextResponse.json(
-        { success: false, error: error?.message ?? "Dosya Supabase Storage'dan okunamadi." },
-        { status: 500 }
-      );
-    }
-
-    if (data.size > MAX_DOWNLOAD_SIZE_BYTES) {
-      return NextResponse.json(
-        { success: false, error: "CSV dosyasi cok buyuk. Maksimum 25MB desteklenir." },
-        { status: 413 }
-      );
-    }
-
-    const csvContent = await data.text();
+    const { content: csvContent, fileName } = await readCsvInput(request, serviceSupabase);
     const parsedCsv = parseFullCsvContent(csvContent);
     const preview = buildPreviewFromFullRows(parsedCsv);
     const csvPreview = buildCsvPreviewPayload(parsedCsv);

@@ -31,6 +31,14 @@ const formatInfraError = (error: unknown) => {
     return "Supabase tabloları henuz hazir degil. Senaryo yerel olarak tutuldu; veritabani senkronu migration push sonrasi aktif olacak.";
   }
 
+  if (normalized.includes("null value") && normalized.includes("user_id")) {
+    return "DesignBuilder proje tablosu eski semada calisiyor. projects.user_id nullable migration'i Supabase'e uygulanmali.";
+  }
+
+  if (normalized.includes("foreign key") && normalized.includes("user_id")) {
+    return "DesignBuilder proje kullanici baglantisi Supabase auth ile eslesmedi. Anonim DesignBuilder migration'i uygulanmali.";
+  }
+
   return message;
 };
 

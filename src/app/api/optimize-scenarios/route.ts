@@ -65,6 +65,30 @@ type SimulationRow = {
   humidity: number | null;
 };
 
+const saveComparisonResult = async (result: Awaited<ReturnType<typeof buildOptimizationDecision>>) => {
+  try {
+    const supabase = createServiceClient();
+    const { error } = await supabase.from("designbuilder_results").insert({
+      project_id: result.winner.projectId,
+      project_name: result.winner.projectName,
+      result_type: "comparison",
+      title: `${result.winner.projectName} - DesignBuilder Karsilastirma Sonucu`,
+      winner_scenario_id: result.winner.scenarioId,
+      winner_scenario_name: result.winner.scenarioName,
+      scenario_ids: result.scenarios.map((scenario) => scenario.scenarioId),
+      result_payload: result,
+    });
+
+    if (error) {
+      return error.message;
+    }
+  } catch (error) {
+    return error instanceof Error ? error.message : "DesignBuilder sonucu kaydedilemedi.";
+  }
+
+  return null;
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body = bodySchema.parse(await request.json().catch(() => ({})));
@@ -140,6 +164,7 @@ export async function POST(request: NextRequest) {
       scenarios: summaries,
       language: body.language,
     });
+    const saveWarning = await saveComparisonResult(result);
 
     return NextResponse.json({
       success: true,
@@ -150,6 +175,7 @@ export async function POST(request: NextRequest) {
       strategistSummary: result.strategistSummary,
       baselineScenarioId: result.baselineScenarioId,
       currency: result.currency,
+      saveWarning,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Optimization karsilastirmasi sirasinda hata olustu.";

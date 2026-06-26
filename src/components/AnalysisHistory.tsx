@@ -84,8 +84,8 @@ export default function AnalysisHistory() {
   return (
     <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-glow backdrop-blur">
       <header className="mb-4">
-        <h2 className="text-xl font-bold text-slate-900">Son 5 Analiz</h2>
-        <p className="mt-1 text-sm text-slate-600">Kaydedilen en guncel analiz sonuclarini buradan takip edebilirsin.</p>
+        <h2 className="text-xl font-bold text-slate-900">Tum Analizler</h2>
+        <p className="mt-1 text-sm text-slate-600">Kaydedilen tum mevcut sistem analiz sonuclarini buradan takip edebilirsin.</p>
       </header>
 
       {loading ? <p className="text-sm text-slate-600">Gecmis analizler yukleniyor...</p> : null}

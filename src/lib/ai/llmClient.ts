@@ -88,7 +88,7 @@ const generateOpenAiText = async (params: GenerateLlmTextParams): Promise<LlmRes
 };
 
 export const generateLlmText = async (params: GenerateLlmTextParams): Promise<LlmResult> => {
-  const provider = params.provider ?? "auto";
+  const provider = params.provider ?? "gemini";
 
   if (provider === "openai") {
     return generateOpenAiText(params);
@@ -103,14 +103,6 @@ export const generateLlmText = async (params: GenerateLlmTextParams): Promise<Ll
       timeoutMs: params.timeoutMs,
     });
     return { ...result, provider: "gemini" };
-  }
-
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      return await generateOpenAiText(params);
-    } catch {
-      // Fall back to Gemini when OpenAI is unavailable.
-    }
   }
 
   const result = await generateGeminiText({

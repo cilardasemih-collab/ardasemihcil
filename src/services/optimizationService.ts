@@ -352,8 +352,8 @@ export async function buildOptimizationDecision(input: {
       systemPrompt: STRATEGIST_SYSTEM_PROMPT,
       userPrompt: buildStrategistPrompt(scenarios, latexTable, input.language),
       temperature: 0.2,
-      maxOutputTokens: 1800,
-      timeoutMs: 45000,
+      maxOutputTokens: 900,
+      timeoutMs: 30000,
     });
     strategistSummary = strategist.text.trim() || fallbackSummary;
   } catch {

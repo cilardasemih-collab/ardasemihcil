@@ -13,8 +13,7 @@ export async function GET() {
       .select(
         "id,file_name,created_at,savings_amount,optimization_method,old_total_energy,new_total_energy,ai_report_markdown,analysis_payload"
       )
-      .order("created_at", { ascending: false })
-      .limit(5);
+      .order("created_at", { ascending: false });
 
     if (error) {
       throw new Error(error.message);

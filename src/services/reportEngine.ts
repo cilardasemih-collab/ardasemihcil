@@ -22,7 +22,9 @@ const sectionPayloadSchema = z.object({
   summary: z.string(),
 });
 
-const SECTION_GENERATION_TIMEOUT_MS = 90000;
+const SECTION_GENERATION_TIMEOUT_MS = 45000;
+const SECTION_OUTPUT_TOKEN_LIMIT = Number(process.env.DESIGNBUILDER_SECTION_MAX_TOKENS ?? 1400);
+const DESIGNBUILDER_CONTEXT_LIMIT = Number(process.env.DESIGNBUILDER_CONTEXT_LIMIT ?? 3);
 type SectionMemoryItem = { title: string; summary: string };
 
 const sectionPromptForLanguage = (language: "tr" | "en") =>
@@ -83,7 +85,7 @@ const buildSectionPrompt = (input: {
     "Retrieved technical context:",
     input.retrievedContext,
     "Write this section as final client-facing report prose, not a draft.",
-    "Target roughly 900-1400 words. Use clear subheadings, short technical paragraphs, compact tables when helpful, and explicit engineering interpretation.",
+    "Target roughly 350-600 words. Use clear subheadings, short technical paragraphs, compact tables only when they add decision value, and explicit engineering interpretation.",
     "Never use the words AI, yapay zeka, model limitation, fallback, prompt, or service failure in the report body.",
     "Finish with 2-4 actionable engineering notes specific to this section.",
   ].join("\n\n");
@@ -91,7 +93,7 @@ const buildSectionPrompt = (input: {
 
 const loadRetrievedContext = async (scenarioSummary: ScenarioSummaryPayload) => {
   try {
-    return formatRetrievedContext(await retrieveRelevantDocuments(scenarioSummary, 5));
+    return formatRetrievedContext(await retrieveRelevantDocuments(scenarioSummary, DESIGNBUILDER_CONTEXT_LIMIT));
   } catch {
     return "Harici mevzuat baglami su anda kullanilamiyor. Yorum yalnizca mevcut simulasyon ozetine dayandirilsin.";
   }
@@ -99,7 +101,7 @@ const loadRetrievedContext = async (scenarioSummary: ScenarioSummaryPayload) => 
 
 const loadLearnedRulesContext = async (scenarioSummary: ScenarioSummaryPayload) => {
   try {
-    return formatLearnedRules(await retrieveLearnedRules(scenarioSummary, 5));
+    return formatLearnedRules(await retrieveLearnedRules(scenarioSummary, DESIGNBUILDER_CONTEXT_LIMIT));
   } catch {
     return "Ogrenilmis kural bulunamadi.";
   }
@@ -529,7 +531,7 @@ export async function generateSingleReportSection(input: {
       }),
       responseMimeType: "application/json",
       temperature: 0.2,
-      maxOutputTokens: 3800,
+      maxOutputTokens: SECTION_OUTPUT_TOKEN_LIMIT,
       timeoutMs: SECTION_GENERATION_TIMEOUT_MS,
     });
 

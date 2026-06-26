@@ -23,6 +23,9 @@ export default function DesignBuilderPage() {
               <span className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white">
                 DesignBuilder
               </span>
+              <Link href="/gecmis" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
+                Gecmis
+              </Link>
               <Link href="/qr-olusturucu" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
                 QR Olusturucu
               </Link>
