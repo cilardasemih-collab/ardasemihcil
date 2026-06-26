@@ -136,6 +136,18 @@ const sanitizeJsonText = (raw: string): string => {
 
 const normalizeHeader = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+const OPERATIONAL_TARGET_KEYWORDS = [
+  "motorpower",
+  "rpm",
+  "torque",
+  "outletpressure",
+  "pressure",
+  "airflow",
+  "flow",
+  "pumppower",
+  "wpumppower",
+];
+
 const looksNumeric = (value: string): boolean => {
   const normalized = value
     .trim()
@@ -147,16 +159,66 @@ const looksNumeric = (value: string): boolean => {
   return normalized.length > 0 && Number.isFinite(Number(normalized));
 };
 
+const detectOperationalTargets = (preview: CsvPreview): string[] => {
+  return preview.headers.filter((header) => {
+    const normalized = normalizeHeader(header);
+    if (normalized === "id" || normalized === "row" || normalized === "index") return false;
+    const hasNumericSample = preview.firstFiveRows.some((row) => looksNumeric(row[header] ?? ""));
+    return hasNumericSample && OPERATIONAL_TARGET_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  });
+};
+
+const buildIndustrialOptimizationInstruction = (targets: string[]): string => {
+  const motorPower = targets.find((item) => normalizeHeader(item).includes("motorpower")) ?? "motor_power";
+  const rpm = targets.find((item) => normalizeHeader(item).includes("rpm")) ?? "rpm";
+  const torque = targets.find((item) => normalizeHeader(item).includes("torque")) ?? "torque";
+  const pressure =
+    targets.find((item) => normalizeHeader(item).includes("outletpressure")) ??
+    targets.find((item) => normalizeHeader(item).includes("pressure")) ??
+    "outlet_pressure_bar";
+
+  return [
+    "1. Veri setindeki her bir satiri al.",
+    `2. '${motorPower}' degerini minimize etmeye calisirken, '${torque}' ve '${pressure}' degerlerinin belirli bir esik degerin uzerinde oldugundan emin ol.`,
+    `3. Optimizasyon algoritmasi kullanarak, '${motorPower}' degerini minimize eden '${rpm}' degerini bul.`,
+    `4. Eger birden fazla '${rpm}' degeri ayni minimum '${motorPower}' degerini veriyorsa, en dusuk '${rpm}' degerini sec.`,
+    `5. Bulunan optimum '${rpm}' degerini ve karsilik gelen '${motorPower}', '${torque}' ve '${pressure}' degerlerini kaydet.`,
+  ].join(" ");
+};
+
+const enrichDiagnosisForCsv = (preview: CsvPreview, diagnosis: AiDiagnosis): AiDiagnosis => {
+  const operationalTargets = detectOperationalTargets(preview);
+  if (operationalTargets.length === 0) return diagnosis;
+
+  const mergedTargets = Array.from(new Set([...(diagnosis.hedef_kolonlar ?? []), ...operationalTargets]));
+  const instruction = diagnosis.matematiksel_islem_talimati?.trim()
+    ? diagnosis.matematiksel_islem_talimati
+    : buildIndustrialOptimizationInstruction(mergedTargets);
+
+  const normalizedInstruction = instruction.toLowerCase();
+  const shouldUseIndustrialInstruction =
+    normalizedInstruction.includes("%20") ||
+    normalizedInstruction.includes("20%") ||
+    !normalizedInstruction.includes("motor_power");
+
+  return {
+    ...diagnosis,
+    hedef_kolonlar: mergedTargets,
+    matematiksel_islem_talimati: shouldUseIndustrialInstruction ? buildIndustrialOptimizationInstruction(mergedTargets) : instruction,
+  };
+};
+
 const buildFallbackDiagnosis = (preview: CsvPreview): AiDiagnosis => {
   const energyKeywords = ["energy", "consumption", "power", "motor", "kw", "kwh", "enerji", "tuketim", "guc"];
   const numericColumns = preview.headers.filter((header) =>
     preview.firstFiveRows.some((row) => looksNumeric(row[header] ?? ""))
   );
+  const operationalTargets = detectOperationalTargets(preview);
   const energyColumns = numericColumns.filter((header) => {
     const normalized = normalizeHeader(header);
     return energyKeywords.some((keyword) => normalized.includes(keyword));
   });
-  const hedefKolonlar = (energyColumns.length > 0 ? energyColumns : numericColumns).slice(0, 6);
+  const hedefKolonlar = (operationalTargets.length > 0 ? operationalTargets : energyColumns.length > 0 ? energyColumns : numericColumns).slice(0, 8);
 
   return {
     tespit:
@@ -165,8 +227,10 @@ const buildFallbackDiagnosis = (preview: CsvPreview): AiDiagnosis => {
         : "Genel operasyonel verimlilik tespiti yapildi.",
     hedef_kolonlar: hedefKolonlar,
     matematiksel_islem_talimati:
-      hedefKolonlar.length > 0
-        ? "Belirlenen sayisal tuketim/performans kolonlarina %20 azaltim senaryosu uygula; mevcut toplam ile optimize toplam arasindaki farki tasarruf olarak hesapla."
+      operationalTargets.length > 0
+        ? buildIndustrialOptimizationInstruction(hedefKolonlar)
+        : hedefKolonlar.length > 0
+          ? "Belirlenen sayisal tuketim/performans kolonlarina %20 azaltim senaryosu uygula; mevcut toplam ile optimize toplam arasindaki farki tasarruf olarak hesapla."
         : "Uygun sayisal hedef kolon bulunamazsa veri kalitesini raporla ve operasyonel iyilestirme icin %20 verimlilik varsayimi kullan.",
   };
 };
@@ -267,13 +331,13 @@ const callGeminiForDiagnosis = async (preview: CsvPreview): Promise<AiDiagnosis>
       throw new Error("AI bos yanit dondu.");
     }
 
-    return await parseDiagnosisJson(rawJson);
+    return enrichDiagnosisForCsv(preview, await parseDiagnosisJson(rawJson));
   } catch (error) {
     console.warn(
       "AI diagnosis failed, using deterministic CSV fallback:",
       error instanceof Error ? error.message : error
     );
-    return buildFallbackDiagnosis(preview);
+    return enrichDiagnosisForCsv(preview, buildFallbackDiagnosis(preview));
   }
 };
 
@@ -352,7 +416,11 @@ export async function POST(request: NextRequest) {
         console.warn("AI engineering report failed, using fallback:", error instanceof Error ? error.message : error);
         return buildFallbackEngineeringReport(summary);
       }),
-      generateOeeActionPlan({ optimizationMethod: summary.optimizationMethod }, { timeoutMs: 18000 }),
+      generateOeeActionPlan({ optimizationMethod: summary.optimizationMethod }, { timeoutMs: 18000 }).catch(() => [
+        "Ekipman izleme ve periyodik bakim planini enerji tuketimi anomalilerine gore guncelle.",
+        "RPM, motor gucu, tork ve cikis basinci iliskisini haftalik olarak izleyerek sapmalari erken tespit et.",
+        "Kalite ve performans kayiplarini azaltmak icin kritik esik degerleri saha kosullarina gore dogrula.",
+      ]),
       generatePracticeProblems({
         summary,
         oeeSummary,

@@ -50,6 +50,27 @@ const MAX_ROW_LIMIT = 250000;
 
 const normalize = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+const identifierColumnNames = new Set(["id", "row", "rowid", "index", "no", "number", "timestamp", "time", "date"]);
+
+const optimizationColumnPriority = [
+  "motorpower",
+  "power",
+  "rpm",
+  "torque",
+  "outletpressure",
+  "pressure",
+  "airflow",
+  "flow",
+  "pumppower",
+  "wpumppower",
+  "kw",
+  "kwh",
+  "energy",
+  "consumption",
+  "enerji",
+  "tuketim",
+  "guc",
+];
 
 const toNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) return null;
@@ -125,6 +146,54 @@ const detectEnergyColumns = (headers: string[], aiTargets: string[]): string[] =
   return Array.from(new Set([...fromKeywords, ...fromTargets]));
 };
 
+const isIdentifierColumn = (header: string): boolean => {
+  const normalizedHeader = normalize(header);
+  return identifierColumnNames.has(normalizedHeader);
+};
+
+const hasNumericValues = (rows: Array<Record<string, string>>, column: string): boolean => {
+  let numericCount = 0;
+  for (const row of rows.slice(0, 25)) {
+    if (toNumber(row[column]) !== null) numericCount += 1;
+    if (numericCount >= 2) return true;
+  }
+  return numericCount > 0;
+};
+
+const detectOperationalOptimizationColumns = (headers: string[], rows: Array<Record<string, string>>): string[] => {
+  return headers.filter((header) => {
+    if (isIdentifierColumn(header) || !hasNumericValues(rows, header)) return false;
+    const key = normalize(header);
+    return optimizationColumnPriority.some((token) => key.includes(token));
+  });
+};
+
+const sortOptimizationColumns = (columns: string[]): string[] => {
+  return [...columns].sort((a, b) => {
+    const aKey = normalize(a);
+    const bKey = normalize(b);
+    const aIndex = optimizationColumnPriority.findIndex((token) => aKey.includes(token));
+    const bIndex = optimizationColumnPriority.findIndex((token) => bKey.includes(token));
+    const safeA = aIndex >= 0 ? aIndex : optimizationColumnPriority.length;
+    const safeB = bIndex >= 0 ? bIndex : optimizationColumnPriority.length;
+    return safeA - safeB || a.localeCompare(b);
+  });
+};
+
+const selectOptimizationColumns = (parsedCsv: ParsedCsvData, diagnosis: AiDiagnosis): string[] => {
+  const headers = parsedCsv.headers;
+  const rows = parsedCsv.rows;
+  const targetColumns = mapAiTargetsToHeaders(headers, diagnosis.hedef_kolonlar ?? []).filter((column) => !isIdentifierColumn(column));
+  const energyColumns = detectEnergyColumns(headers, diagnosis.hedef_kolonlar ?? []).filter((column) => !isIdentifierColumn(column));
+  const operationalColumns = detectOperationalOptimizationColumns(headers, rows);
+
+  const merged = Array.from(new Set([...targetColumns, ...operationalColumns, ...energyColumns])).filter((column) =>
+    hasNumericValues(rows, column)
+  );
+
+  return sortOptimizationColumns(merged);
+};
+
 export const parseFullCsvContent = (csvContent: string): ParsedCsvData => {
   const estimatedBytes = Buffer.byteLength(csvContent, "utf8");
   if (estimatedBytes > MAX_FILE_SIZE_BYTES) {
@@ -163,12 +232,9 @@ export const buildOptimizationSummary = (
   parsedCsv: ParsedCsvData,
   diagnosis: AiDiagnosis
 ): OptimizationSummary => {
-  const headers = parsedCsv.headers;
   const rows = parsedCsv.rows;
 
-  const targetColumns = mapAiTargetsToHeaders(headers, diagnosis.hedef_kolonlar ?? []);
-  const energyColumns = detectEnergyColumns(headers, diagnosis.hedef_kolonlar ?? []);
-  const columnsToProcess = energyColumns.length > 0 ? energyColumns : targetColumns;
+  const columnsToProcess = selectOptimizationColumns(parsedCsv, diagnosis);
   const factor = extractOptimizationFactor(diagnosis.matematiksel_islem_talimati);
 
   let oldTotalEnergy = 0;
@@ -199,11 +265,8 @@ export const buildColumnContributions = (
   diagnosis: AiDiagnosis,
   limit = 6
 ): ColumnContribution[] => {
-  const headers = parsedCsv.headers;
   const rows = parsedCsv.rows;
-  const targetColumns = mapAiTargetsToHeaders(headers, diagnosis.hedef_kolonlar ?? []);
-  const energyColumns = detectEnergyColumns(headers, diagnosis.hedef_kolonlar ?? []);
-  const columnsToProcess = energyColumns.length > 0 ? energyColumns : targetColumns;
+  const columnsToProcess = selectOptimizationColumns(parsedCsv, diagnosis);
   const factor = extractOptimizationFactor(diagnosis.matematiksel_islem_talimati);
 
   const results = columnsToProcess
