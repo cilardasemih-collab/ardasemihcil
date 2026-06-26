@@ -26,6 +26,45 @@ const SECTION_GENERATION_TIMEOUT_MS = 45000;
 const SECTION_OUTPUT_TOKEN_LIMIT = Number(process.env.DESIGNBUILDER_SECTION_MAX_TOKENS ?? 1400);
 const DESIGNBUILDER_CONTEXT_LIMIT = Number(process.env.DESIGNBUILDER_CONTEXT_LIMIT ?? 3);
 type SectionMemoryItem = { title: string; summary: string };
+type OpenMeteoGeocodingResponse = {
+  results?: Array<{
+    name?: string;
+    country?: string;
+    latitude?: number;
+    longitude?: number;
+    timezone?: string;
+  }>;
+};
+type OpenMeteoForecastResponse = {
+  current?: {
+    temperature_2m?: number;
+    relative_humidity_2m?: number;
+    wind_speed_10m?: number;
+  };
+  daily?: {
+    temperature_2m_max?: number[];
+    temperature_2m_min?: number[];
+    precipitation_sum?: number[];
+  };
+};
+
+const fetchJsonWithTimeout = async <T>(url: string, timeoutMs = 4500): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const avg = (values: Array<number | undefined>) => {
+  const filtered = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (filtered.length === 0) return null;
+  return Number((filtered.reduce((sum, value) => sum + value, 0) / filtered.length).toFixed(1));
+};
 
 const sectionPromptForLanguage = (language: "tr" | "en") =>
   language === "tr"
@@ -96,6 +135,51 @@ const loadRetrievedContext = async (scenarioSummary: ScenarioSummaryPayload) => 
     return formatRetrievedContext(await retrieveRelevantDocuments(scenarioSummary, DESIGNBUILDER_CONTEXT_LIMIT));
   } catch {
     return "Harici mevzuat baglami su anda kullanilamiyor. Yorum yalnizca mevcut simulasyon ozetine dayandirilsin.";
+  }
+};
+
+const loadInternetClimateContext = async (scenarioSummary: ScenarioSummaryPayload) => {
+  const location = scenarioSummary.scenario.location?.trim();
+  if (!location) return "Internet iklim baglami: Konum girilmedigi icin dis hava verisi aranamaz.";
+
+  try {
+    const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=tr&format=json`;
+    const geocode = await fetchJsonWithTimeout<OpenMeteoGeocodingResponse>(geocodeUrl);
+    const place = geocode.results?.find((item) => typeof item.latitude === "number" && typeof item.longitude === "number");
+    if (!place || typeof place.latitude !== "number" || typeof place.longitude !== "number") {
+      return `Internet iklim baglami: "${location}" icin koordinat bulunamadi.`;
+    }
+
+    const forecastUrl = [
+      "https://api.open-meteo.com/v1/forecast",
+      `latitude=${place.latitude}`,
+      `longitude=${place.longitude}`,
+      "current=temperature_2m,relative_humidity_2m,wind_speed_10m",
+      "daily=temperature_2m_max,temperature_2m_min,precipitation_sum",
+      `timezone=${encodeURIComponent(place.timezone ?? "auto")}`,
+      "forecast_days=7",
+    ].join("&").replace("forecast&latitude", "forecast?latitude");
+    const forecast = await fetchJsonWithTimeout<OpenMeteoForecastResponse>(forecastUrl);
+    const current = forecast.current ?? {};
+    const daily = forecast.daily ?? {};
+    const maxAvg = avg(daily.temperature_2m_max ?? []);
+    const minAvg = avg(daily.temperature_2m_min ?? []);
+    const precipitation = (daily.precipitation_sum ?? [])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+      .reduce((sum, value) => sum + value, 0);
+
+    return [
+      "Internet iklim/hava baglami (Open-Meteo, yaklasik konum):",
+      `- Eslesen konum: ${place.name ?? location}${place.country ? `, ${place.country}` : ""} (${place.latitude}, ${place.longitude})`,
+      `- Guncel dis hava sicakligi: ${current.temperature_2m ?? "yok"} C`,
+      `- Guncel bagil nem: ${current.relative_humidity_2m ?? "yok"}%`,
+      `- Guncel ruzgar hizi: ${current.wind_speed_10m ?? "yok"} km/h`,
+      `- 7 gunluk ortalama maksimum/minimum sicaklik: ${maxAvg ?? "yok"} C / ${minAvg ?? "yok"} C`,
+      `- 7 gunluk toplam yagis beklentisi: ${Number(precipitation.toFixed(1))} mm`,
+      "Bu veri tasarim iklim dosyasinin yerine gecmez; raporda dis hava baglami ve kontrol notu olarak kullan.",
+    ].join("\n");
+  } catch {
+    return "Internet iklim baglami: Open-Meteo verisi su anda alinamadi; rapor yalnizca simulasyon ve proje girdilerine dayandirilsin.";
   }
 };
 
@@ -390,7 +474,7 @@ export async function generateSequentialReport(input: {
   scenarioSummary: ScenarioSummaryPayload;
   language: "tr" | "en";
 }) {
-  const retrievedContext = await loadRetrievedContext(input.scenarioSummary);
+  const retrievedContext = [await loadRetrievedContext(input.scenarioSummary), await loadInternetClimateContext(input.scenarioSummary)].join("\n\n");
   const memory: Array<{ title: string; summary: string }> = [];
   let provider = "";
   let model = "";
@@ -424,7 +508,9 @@ export async function generateReportSectionsFrom(input: {
   initialMemory: Array<{ title: string; summary: string }>;
   retrievedContext?: string;
 }) {
-  const retrievedContext = input.retrievedContext ?? (await loadRetrievedContext(input.scenarioSummary));
+  const retrievedContext =
+    input.retrievedContext ??
+    [await loadRetrievedContext(input.scenarioSummary), await loadInternetClimateContext(input.scenarioSummary)].join("\n\n");
   const learnedRulesContext = await loadLearnedRulesContext(input.scenarioSummary);
   const memory = [...input.initialMemory];
   let provider = "";
@@ -514,7 +600,9 @@ export async function generateSingleReportSection(input: {
   memory: SectionMemoryItem[];
   learnedRulesContext?: string;
 }) {
-  const retrievedContext = input.retrievedContext ?? (await loadRetrievedContext(input.scenarioSummary));
+  const retrievedContext =
+    input.retrievedContext ??
+    [await loadRetrievedContext(input.scenarioSummary), await loadInternetClimateContext(input.scenarioSummary)].join("\n\n");
   const learnedRulesContext = input.learnedRulesContext ?? (await loadLearnedRulesContext(input.scenarioSummary));
 
   try {

@@ -39,6 +39,9 @@ const summarizeMetricWithSum = (values: Array<number | null | undefined>): Summe
   };
 };
 
+const asMagnitude = (value: number | null | undefined) =>
+  typeof value === "number" && Number.isFinite(value) ? Math.abs(value) : null;
+
 const findPeak = (
   rows: SimulationData[],
   selector: (row: SimulationData) => number | null
@@ -95,8 +98,8 @@ export function buildScenarioSummary(input: {
   const sortedRows = [...input.rows].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
   const zoneCount = new Set(sortedRows.map((row) => row.zone_name)).size;
   const airTemperature = summarizeMetric(sortedRows.map((row) => row.air_temperature));
-  const heatingLoad = summarizeMetricWithSum(sortedRows.map((row) => row.heating_load));
-  const coolingLoad = summarizeMetricWithSum(sortedRows.map((row) => row.cooling_load));
+  const heatingLoad = summarizeMetricWithSum(sortedRows.map((row) => asMagnitude(row.heating_load)));
+  const coolingLoad = summarizeMetricWithSum(sortedRows.map((row) => asMagnitude(row.cooling_load)));
   const humidity = summarizeMetric(sortedRows.map((row) => row.humidity));
   const anomalies: string[] = [];
 
@@ -115,6 +118,9 @@ export function buildScenarioSummary(input: {
   if ((coolingLoad.max ?? -Infinity) > 1_000_000) {
     anomalies.push(`Cooling load pik degeri asiri yuksek: ${coolingLoad.max}`);
   }
+  if (sortedRows.some((row) => typeof row.cooling_load === "number" && row.cooling_load < 0)) {
+    anomalies.push("Cooling load kolonunda negatif isaretli degerler var; grafik ve toplamlar yuk buyuklugu olarak normalize edildi.");
+  }
 
   return {
     scenario: input.scenario,
@@ -132,11 +138,11 @@ export function buildScenarioSummary(input: {
         humidity,
       },
       peaks: {
-        heating: findPeak(sortedRows, (row) => row.heating_load),
-        cooling: findPeak(sortedRows, (row) => row.cooling_load),
+        heating: findPeak(sortedRows, (row) => asMagnitude(row.heating_load)),
+        cooling: findPeak(sortedRows, (row) => asMagnitude(row.cooling_load)),
       },
-      topZonesByHeating: topZones(sortedRows, (row) => row.heating_load),
-      topZonesByCooling: topZones(sortedRows, (row) => row.cooling_load),
+      topZonesByHeating: topZones(sortedRows, (row) => asMagnitude(row.heating_load)),
+      topZonesByCooling: topZones(sortedRows, (row) => asMagnitude(row.cooling_load)),
       detectedAnomalies: anomalies,
     },
   };

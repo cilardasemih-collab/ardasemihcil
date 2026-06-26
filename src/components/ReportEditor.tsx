@@ -49,6 +49,7 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
   const [feedbackNote, setFeedbackNote] = useState("");
   const [feedbackSelection, setFeedbackSelection] = useState("");
   const [refiningKey, setRefiningKey] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     setDrafts((prev) => {
@@ -73,7 +74,7 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
       const [sectionKey, sectionContent] = pending[0];
       setSavingKey(sectionKey);
       try {
-        await fetch("/api/reports/section", {
+        const response = await fetch("/api/reports/section", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -82,7 +83,14 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
             sectionContent,
           }),
         });
+        const payload = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.error ?? "Bölüm otomatik kaydedilemedi.");
+        }
         await onSectionsChanged();
+        setNotice({ tone: "success", message: "Bölüm kaydedildi." });
+      } catch (error) {
+        setNotice({ tone: "error", message: error instanceof Error ? error.message : "Bölüm otomatik kaydedilemedi." });
       } finally {
         setSavingKey(null);
       }
@@ -102,28 +110,41 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
 
   const submitFeedback = async (section: ReportSectionRecord) => {
     const originalText = feedbackSelection || (drafts[section.sectionKey] ?? section.sectionContent);
-    await fetch("/api/reports/feedback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        reportGroupId,
-        sectionKey: section.sectionKey,
-        errorType: feedbackType,
-        feedbackKind,
-        originalText,
-        correctedText: null,
-        engineerNote: feedbackNote,
-      }),
-    });
-    setFeedbackKey(null);
-    setFeedbackNote("");
-    setFeedbackSelection("");
+    setSavingKey(section.sectionKey);
+    try {
+      const response = await fetch("/api/reports/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportGroupId,
+          sectionKey: section.sectionKey,
+          errorType: feedbackType,
+          feedbackKind,
+          originalText,
+          correctedText: null,
+          engineerNote: feedbackNote,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error ?? "Geri bildirim kaydedilemedi.");
+      }
+      await onSectionsChanged();
+      setFeedbackKey(null);
+      setFeedbackNote("");
+      setFeedbackSelection("");
+      setNotice({ tone: "success", message: "Geri bildirim kaydedildi ve öğrenme kuyruğuna alındı." });
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Geri bildirim kaydedilemedi." });
+    } finally {
+      setSavingKey(null);
+    }
   };
 
   const refineSection = async (section: ReportSectionRecord) => {
     setRefiningKey(section.sectionKey);
     try {
-      await fetch("/api/reports/refine", {
+      const response = await fetch("/api/reports/refine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -133,10 +154,17 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
           language,
         }),
       });
+      const payload = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string };
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.error ?? "Bölüm yeniden üretilemedi.");
+      }
       await onSectionsChanged();
       setFeedbackKey(null);
       setFeedbackNote("");
       setFeedbackSelection("");
+      setNotice({ tone: "success", message: "Bölüm geri bildirime göre yeniden üretildi." });
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Bölüm yeniden üretilemedi." });
     } finally {
       setRefiningKey(null);
     }
@@ -144,6 +172,15 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
 
   return (
     <div className="space-y-5">
+      {notice ? (
+        <p
+          className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            notice.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"
+          }`}
+        >
+          {notice.message}
+        </p>
+      ) : null}
       {sections.map((section) => {
         const value = drafts[section.sectionKey] ?? section.sectionContent;
         const showDiff = diffKey === section.sectionKey;
@@ -156,12 +193,12 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{section.sectionTitle}</p>
                 <p className="mt-1 text-xs text-slate-600">
-                  Review: {section.reviewStatus} · Son kaynak: {section.lastEditedSource}
+                  Denetim: {section.reviewStatus} · Son kaynak: {section.lastEditedSource}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="outline" onClick={() => setDiffKey(showDiff ? null : section.sectionKey)}>
-                  <GitCompare className="mr-2 h-4 w-4" /> Degisiklikleri Gor
+                  <GitCompare className="mr-2 h-4 w-4" /> Değişiklikleri Gör
                 </Button>
                 <Button
                   type="button"
@@ -179,7 +216,7 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="space-y-3">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Markdown Editor</p>
+                  <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Markdown Düzenleyici</p>
                   <textarea
                     value={value}
                     onChange={(event) => setDrafts((prev) => ({ ...prev, [section.sectionKey]: event.target.value }))}
@@ -188,19 +225,19 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                     <span>Markdown, tablo ve $LaTeX$ notasyonu desteklenir.</span>
                     {savingKey === section.sectionKey ? (
-                      <span className="inline-flex items-center gap-1 text-cyan-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Autosave</span>
+                      <span className="inline-flex items-center gap-1 text-cyan-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Kaydediliyor</span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-emerald-700"><Save className="h-3.5 w-3.5" /> Kayit hazir</span>
+                      <span className="inline-flex items-center gap-1 text-emerald-700"><Save className="h-3.5 w-3.5" /> Kayıt hazır</span>
                     )}
                   </div>
                 </div>
 
                 {showFeedback ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-sm font-black text-amber-900">Inline Feedback</p>
+                    <p className="text-sm font-black text-amber-900">Mühendis Geri Bildirimi</p>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <label className="text-sm font-semibold text-slate-700">
-                        Tur
+                        Tür
                         <select
                           value={feedbackKind}
                           onChange={(event) => setFeedbackKind(event.target.value === "preference" ? "preference" : "error")}
@@ -220,22 +257,22 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
                       </label>
                     </div>
                     <label className="mt-3 block text-sm font-semibold text-slate-700">
-                      Duzeltme Notu
+                      Düzeltme Notu
                       <textarea
                         value={feedbackNote}
                         onChange={(event) => setFeedbackNote(event.target.value)}
                         className="mt-1 min-h-[120px] w-full rounded-2xl border border-slate-300 bg-white p-3 text-sm text-slate-900"
-                        placeholder="Dogrusu su olmali..."
+                        placeholder="Doğrusu şu olmalı..."
                       />
                     </label>
                     {feedbackSelection ? (
                       <p className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                        Secili metin: {feedbackSelection}
+                        Seçili metin: {feedbackSelection}
                       </p>
                     ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button type="button" variant="outline" onClick={() => void submitFeedback(section)} disabled={!feedbackNote.trim()}>
-                        Feedback Kaydet
+                        Geri Bildirimi Kaydet
                       </Button>
                       <Button
                         type="button"
@@ -248,7 +285,7 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
                         ) : (
                           <Sparkles className="mr-2 h-4 w-4" />
                         )}
-                        Geri Bildirimle Yeniden Uret
+                        Geri Bildirimle Yeniden Üret
                       </Button>
                     </div>
                   </div>
@@ -257,7 +294,7 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
 
               <div className="space-y-3">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Live Preview</p>
+                  <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Canlı Önizleme</p>
                   <div className="prose prose-slate max-w-none prose-headings:text-slate-900 prose-strong:text-slate-900">
                     <ReactMarkdown>{value}</ReactMarkdown>
                   </div>
@@ -265,7 +302,7 @@ export default function ReportEditor({ reportGroupId, language, sections, onSect
 
                 {showDiff ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Diff View</p>
+                    <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Değişiklik Görünümü</p>
                     <div className="space-y-1 font-mono text-xs">
                       {diffRows.map((row, index) => (
                         <pre

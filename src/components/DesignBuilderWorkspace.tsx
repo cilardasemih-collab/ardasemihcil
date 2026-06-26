@@ -193,8 +193,8 @@ export default function DesignBuilderWorkspace() {
   const previewChartData = useMemo(() => {
     return selectedPreviewRows.slice(0, 60).map((row, index) => ({
       label: String(index + 1),
-      heating: row.heating_load ?? 0,
-      cooling: row.cooling_load ?? 0,
+      heating: Math.abs(row.heating_load ?? 0),
+      cooling: Math.abs(row.cooling_load ?? 0),
       temperature: row.air_temperature ?? 0,
       humidity: row.humidity ?? 0,
     }));
@@ -492,7 +492,7 @@ export default function DesignBuilderWorkspace() {
     if (result.rows.length === 0) {
       throw new Error(`${file.name} içinde raporlanabilir satır bulunamadı.`);
     }
-    const totalEnergyConsumption = result.rows.reduce((sum, row) => sum + (row.heating_load ?? 0) + (row.cooling_load ?? 0), 0);
+    const totalEnergyConsumption = result.rows.reduce((sum, row) => sum + Math.abs(row.heating_load ?? 0) + Math.abs(row.cooling_load ?? 0), 0);
     const scenario: Scenario = {
       id: scenarioId,
       created_at: new Date(),

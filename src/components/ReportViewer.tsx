@@ -58,6 +58,21 @@ const getScenarioSummary = (sections: ReportSectionRecord[]) => {
 const numberFmt = (value: number | null | undefined) =>
   typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(value) : "-";
 
+const buildZoneLoadChartData = (scenarioSummary: ScenarioSummarySnapshot | null) => {
+  if (!scenarioSummary) return [];
+  const byZone = new Map<string, { zone: string; heating: number; cooling: number }>();
+  for (const item of scenarioSummary.summary.topZonesByHeating.slice(0, 5)) {
+    byZone.set(item.zoneName, { zone: item.zoneName, heating: item.value, cooling: byZone.get(item.zoneName)?.cooling ?? 0 });
+  }
+  for (const item of scenarioSummary.summary.topZonesByCooling.slice(0, 5)) {
+    const current = byZone.get(item.zoneName);
+    byZone.set(item.zoneName, { zone: item.zoneName, heating: current?.heating ?? 0, cooling: item.value });
+  }
+  return Array.from(byZone.values())
+    .sort((a, b) => b.heating + b.cooling - (a.heating + a.cooling))
+    .slice(0, 8);
+};
+
 const benchmarkForBuildingType = (buildingType: unknown) => {
   const normalized = String(buildingType ?? "").toLocaleLowerCase("tr-TR");
   if (normalized.includes("hastane")) return { label: "Saglik yapisi norm araligi", low: 220, high: 420 };
@@ -87,20 +102,7 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const scenarioSummary = getScenarioSummary(sections);
-  const chartData = scenarioSummary
-    ? [
-        ...scenarioSummary.summary.topZonesByHeating.slice(0, 5).map((item) => ({
-          zone: item.zoneName,
-          heating: item.value,
-          cooling: 0,
-        })),
-        ...scenarioSummary.summary.topZonesByCooling.slice(0, 5).map((item) => ({
-          zone: item.zoneName,
-          heating: 0,
-          cooling: item.value,
-        })),
-      ].slice(0, 8)
-    : [];
+  const chartData = buildZoneLoadChartData(scenarioSummary);
   const floorArea = scenarioSummary?.scenario.projectContext?.floorAreaM2;
   const floorAreaM2 = typeof floorArea === "number" && Number.isFinite(floorArea) && floorArea > 0 ? floorArea : null;
   const annualEnergy =

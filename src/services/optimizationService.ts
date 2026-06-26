@@ -81,6 +81,28 @@ export type OptimizationSectionWinner = {
 const CARBON_FACTOR_KG_PER_KWH = 0.42;
 
 const round = (value: number, digits = 3) => Number(value.toFixed(digits));
+const positiveNumber = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null);
+
+const scenarioFloorArea = (summary: ScenarioSummaryPayload) => {
+  const context = summary.scenario.projectContext ?? {};
+  return positiveNumber(context.floorAreaM2) ?? positiveNumber(context.floorArea) ?? positiveNumber(context.areaM2);
+};
+
+const estimateFallbackCapex = (summary: ScenarioSummaryPayload, annualEnergyKwh: number, index: number) => {
+  const context = summary.scenario.projectContext ?? {};
+  const explicit =
+    positiveNumber(context.capex) ??
+    positiveNumber(context.costEstimate) ??
+    positiveNumber(context.estimatedCapex);
+  if (explicit !== null) return explicit;
+
+  const floorArea = scenarioFloorArea(summary) ?? Math.max(500, annualEnergyKwh / 120);
+  const uValues = Object.values(summary.scenario.uValues ?? {}).filter((value) => Number.isFinite(value));
+  const uAverage = uValues.length > 0 ? uValues.reduce((sum, value) => sum + value, 0) / uValues.length : 0.7;
+  const envelopeComplexity = Math.max(0.75, Math.min(1.45, 1 + (uAverage - 0.45) * 0.25));
+
+  return round(floorArea * (85 + index * 18) * envelopeComplexity + annualEnergyKwh * 0.08, 2);
+};
 
 const normalizeInverse = (value: number, min: number, max: number) => {
   if (max - min <= 0) return 100;
@@ -219,30 +241,38 @@ export function aggregateScenarioOptimization(input: {
   const currency = input.currency ?? CURRENCY_PRESETS.TRY;
 
   // Baseline'ı CAPEX'in en düşük olduğu senaryo olarak seç (daha ekonomik başlangıç)
-  const baseline = [...input.scenarios].sort(
-    (a, b) => (a.costEstimate ?? 0) - (b.costEstimate ?? 0)
-  )[0];
+  const baseline = [...input.scenarios].sort((a, b) => {
+    const aEnergy = (a.summary.summary.metrics.heatingLoad.sum ?? 0) + (a.summary.summary.metrics.coolingLoad.sum ?? 0);
+    const bEnergy = (b.summary.summary.metrics.heatingLoad.sum ?? 0) + (b.summary.summary.metrics.coolingLoad.sum ?? 0);
+    return (a.costEstimate ?? estimateFallbackCapex(a.summary, aEnergy, 0)) - (b.costEstimate ?? estimateFallbackCapex(b.summary, bEnergy, 0));
+  })[0];
   const baselineScenarioId = baseline.summary.scenario.id;
 
   const floorAreas = input.scenarios
-    .map((item) => {
-      const area = item.summary.scenario.projectId ? null : null;
-      const climate = item.summary.scenario as unknown as { floorArea?: number };
-      return climate.floorArea ?? null;
-    })
+    .map((item) => scenarioFloorArea(item.summary))
     .filter((item): item is number => typeof item === "number" && Number.isFinite(item) && item > 0);
 
   const fallbackArea = floorAreas.length > 0 ? floorAreas[0] : null;
 
-  const raw = input.scenarios.map(({ summary, costEstimate, reportMarkdown }) => {
-    const annualEnergyKwh = summary.scenario.totalEnergyConsumption ?? (summary.summary.metrics.heatingLoad.sum ?? 0) + (summary.summary.metrics.coolingLoad.sum ?? 0);
+  const raw = input.scenarios.map(({ summary, costEstimate, reportMarkdown }, index) => {
+    const computedAnnualEnergy = (summary.summary.metrics.heatingLoad.sum ?? 0) + (summary.summary.metrics.coolingLoad.sum ?? 0);
+    const storedAnnualEnergy = summary.scenario.totalEnergyConsumption;
+    const annualEnergyKwh =
+      typeof storedAnnualEnergy === "number" && Number.isFinite(storedAnnualEnergy) && storedAnnualEnergy > 0 && storedAnnualEnergy >= computedAnnualEnergy * 0.5
+        ? storedAnnualEnergy
+        : computedAnnualEnergy;
     const annualCarbonKg = annualEnergyKwh * CARBON_FACTOR_KG_PER_KWH;
     const annualCarbonCost = annualCarbonKg * currency.carbonCostPerKg;
     const annualOpexEstimate = (annualEnergyKwh * currency.electricityRatePerKwh) + annualCarbonCost;
-    const capex = costEstimate ?? 0;
+    const capex = costEstimate ?? estimateFallbackCapex(summary, annualEnergyKwh, index);
     
-    const baselineEnergy = baseline.summary.scenario.totalEnergyConsumption ?? annualEnergyKwh;
-    const baselineCapex = baseline.costEstimate ?? 0;
+    const baselineComputedEnergy = (baseline.summary.summary.metrics.heatingLoad.sum ?? 0) + (baseline.summary.summary.metrics.coolingLoad.sum ?? 0);
+    const baselineStoredEnergy = baseline.summary.scenario.totalEnergyConsumption;
+    const baselineEnergy =
+      typeof baselineStoredEnergy === "number" && Number.isFinite(baselineStoredEnergy) && baselineStoredEnergy > 0 && baselineStoredEnergy >= baselineComputedEnergy * 0.5
+        ? baselineStoredEnergy
+        : baselineComputedEnergy || annualEnergyKwh;
+    const baselineCapex = baseline.costEstimate ?? estimateFallbackCapex(baseline.summary, baselineEnergy, 0);
     const baselineOpex = (baselineEnergy * currency.electricityRatePerKwh) + (baselineEnergy * CARBON_FACTOR_KG_PER_KWH * currency.carbonCostPerKg);
     
     const deltaCapex = capex - baselineCapex;

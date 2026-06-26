@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { ScatterChart, Scatter, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis, LineChart, Line, Area, AreaChart } from "recharts";
+import { ScatterChart, Scatter, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis, Area, AreaChart, Cell } from "recharts";
 import ReactMarkdown from "react-markdown";
 import { Crown, TrendingDown, Zap, Leaf } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,18 @@ type OptimizationDashboardProps = {
 };
 
 const numberFmt = (value: number, digits = 2) => new Intl.NumberFormat("tr-TR", { maximumFractionDigits: digits }).format(value);
+const paddedDomain = (values: number[]) => {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (finiteValues.length === 0) return [0, 1] as [number, number];
+  const min = Math.min(...finiteValues);
+  const max = Math.max(...finiteValues);
+  if (min === max) {
+    const padding = Math.max(1, Math.abs(min) * 0.2);
+    return [Math.max(0, min - padding), max + padding] as [number, number];
+  }
+  const padding = Math.max(1, (max - min) * 0.12);
+  return [Math.max(0, min - padding), max + padding] as [number, number];
+};
 
 const addPdfText = (
   pdf: import("jspdf").jsPDF,
@@ -97,6 +109,8 @@ export default function OptimizationDashboard({ result }: OptimizationDashboardP
       })),
     [result.scenarios]
   );
+  const capexDomain = useMemo(() => paddedDomain(scatterData.map((item) => item.x)), [scatterData]);
+  const energyDomain = useMemo(() => paddedDomain(scatterData.map((item) => item.y)), [scatterData]);
 
   return (
     <div className="space-y-6 rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100 p-6 shadow-lg">
@@ -208,6 +222,7 @@ export default function OptimizationDashboard({ result }: OptimizationDashboardP
                   dataKey="x" 
                   name="CAPEX" 
                   unit={` ${result.currency.symbol}`}
+                  domain={capexDomain}
                   stroke="#64748b"
                 />
                 <YAxis 
@@ -215,6 +230,7 @@ export default function OptimizationDashboard({ result }: OptimizationDashboardP
                   dataKey="y" 
                   name="Enerji" 
                   unit=" kWh"
+                  domain={energyDomain}
                   stroke="#64748b"
                 />
                 <Tooltip 
@@ -225,9 +241,12 @@ export default function OptimizationDashboard({ result }: OptimizationDashboardP
                 <Scatter 
                   name="Senaryolar"
                   data={scatterData}
-                  fill="#3b82f6"
                   shape="circle"
-                />
+                >
+                  {scatterData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.fill} />
+                  ))}
+                </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
           </div>
