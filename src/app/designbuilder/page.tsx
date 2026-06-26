@@ -3,7 +3,7 @@ import Link from "next/link";
 import DesignBuilderStudio from "@/components/DesignBuilderStudio";
 
 export const metadata = {
-  title: "DesignBuilder Dijital Muhendislik Ofisi",
+  title: "DesignBuilder Dijital Mühendislik Ofisi",
   description: "DesignBuilder CSV raporlama, denetim ve optimizasyon sistemi",
 };
 
@@ -24,19 +24,19 @@ export default function DesignBuilderPage() {
                 DesignBuilder
               </span>
               <Link href="/gecmis" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
-                Gecmis
+                Geçmiş
               </Link>
               <Link href="/qr-olusturucu" className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-600">
-                QR Olusturucu
+                QR Oluşturucu
               </Link>
             </div>
           </div>
           <h1 className="text-4xl font-black leading-tight text-slate-900 md:text-5xl">
-            DesignBuilder Dijital Muhendislik Ofisi
+            DesignBuilder Dijital Mühendislik Ofisi
           </h1>
           <p className="max-w-3xl text-base text-slate-700">
-            DesignBuilder CSV exportlarini ayri bir is akisiyle yukle, senaryo raporlarini bolum bolum uret,
-            muhendis denetiminden gecir ve optimizasyonu yalnizca tamamlanmis raporlar uzerinden calistir.
+            DesignBuilder CSV çıktılarını ayrı bir iş akışıyla yükle, senaryo raporlarını bölüm bölüm üret,
+            mühendis denetiminden geçir ve optimizasyonu yalnızca tamamlanmış raporlar üzerinden çalıştır.
           </p>
         </section>
 

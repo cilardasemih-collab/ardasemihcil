@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { AlertTriangle, BarChart3, CheckCircle2, Download, FileBarChart2, Loader2, Play, Plus, RefreshCcw, Trash2, Trophy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { buildDesignBuilderInsightPayload } from "@/lib/designbuilder/insights";
@@ -66,9 +66,9 @@ function TemperatureChart({ months }: { months: MonthlyPoint[] }) {
         ))}
       </svg>
       <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-[#334155]">
-        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#0f766e]" /> Air Temp</span>
-        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#1d4ed8]" /> Operative Temp</span>
-        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#ea580c]" /> Outside Temp</span>
+        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#0f766e]" /> Hava Sıcaklığı</span>
+        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#1d4ed8]" /> Operatif Sıcaklık</span>
+        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#ea580c]" /> Dış Sıcaklık</span>
       </div>
     </div>
   );
@@ -93,8 +93,8 @@ function EnergyChart({ months }: { months: MonthlyPoint[] }) {
         ))}
       </div>
       <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-[#334155]">
-        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#ef4444]" /> Heating (Gas)</span>
-        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#3b82f6]" /> Cooling (Electricity)</span>
+        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#ef4444]" /> Isıtma (Gaz)</span>
+        <span className="inline-flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#3b82f6]" /> Soğutma (Elektrik)</span>
       </div>
     </div>
   );
@@ -122,8 +122,6 @@ export default function DesignBuilderOptimization() {
   const [aiActionPlan, setAiActionPlan] = useState<string[]>([]);
   const [aiMeta, setAiMeta] = useState<{ fallbackUsed: boolean; model: string | null } | null>(null);
 
-  const pdfRootRef = useRef<HTMLDivElement | null>(null);
-  const pdfSectionsRef = useRef<HTMLDivElement | null>(null);
 
   const resetAiInsights = () => {
     setAiError("");
@@ -234,46 +232,65 @@ export default function DesignBuilderOptimization() {
   }, [queue]);
 
   const exportPdf = async () => {
-    if (!pdfRootRef.current || reports.length === 0) return;
+    if (reports.length === 0) return;
 
     setIsExportingPdf(true);
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+      const { jsPDF } = await import("jspdf");
       const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 8;
-      const contentWidth = pageWidth - margin * 2;
-
-      const sections = Array.from(pdfSectionsRef.current?.querySelectorAll<HTMLElement>("[data-pdf-section='1']") ?? []);
-      let firstPage = true;
-
-      for (const section of sections) {
-        const canvas = await html2canvas(section, {
-          scale: 2,
-          backgroundColor: "#ffffff",
-          useCORS: true,
-        });
-
-        const imgData = canvas.toDataURL("image/png");
-        const imgHeight = (canvas.height * contentWidth) / canvas.width;
-
-        if (!firstPage) {
-          pdf.addPage();
+      const margin = 14;
+      const maxWidth = 182;
+      let y = 18;
+      const write = (text: string, fontSize = 10, lineHeight = 6) => {
+        pdf.setFontSize(fontSize);
+        const lines = pdf.splitTextToSize(text.replace(/\n{3,}/g, "\n\n"), maxWidth);
+        for (const line of lines) {
+          if (y > pageHeight - margin) {
+            pdf.addPage();
+            y = 18;
+          }
+          pdf.text(line, margin, y);
+          y += lineHeight;
         }
-        firstPage = false;
+      };
 
-        let remainingHeight = imgHeight;
-        let positionY = margin;
-        pdf.addImage(imgData, "PNG", margin, positionY, contentWidth, imgHeight, undefined, "FAST");
-        remainingHeight -= pageHeight - margin * 2;
+      write("DesignBuilder Optimizasyon Raporu", 16, 8);
+      if (winner) {
+        write(`Önerilen senaryo: ${winner.fileName}`, 12, 7);
+        write(`Toplam skor: ${numberFmt(winner.finalScore, 4)}`, 10);
+      }
 
-        while (remainingHeight > 0) {
-          pdf.addPage();
-          positionY = margin - (imgHeight - remainingHeight);
-          pdf.addImage(imgData, "PNG", margin, positionY, contentWidth, imgHeight, undefined, "FAST");
-          remainingHeight -= pageHeight - margin * 2;
+      write("Senaryo Özetleri", 13, 8);
+      for (const report of reports) {
+        write(
+          `${report.fileName}: Sistem enerjisi ${numberFmt(report.totalSystemEnergy)} kWh, konfor cezası ${numberFmt(
+            report.comfortPenalty
+          )}, sıcaklık salınımı ${numberFmt(report.temperatureSwing)} C, U değeri ${report.uValue ?? "-"}`,
+          10
+        );
+      }
+
+      if (ranking.length > 0) {
+        write("Sıralama", 13, 8);
+        for (const [index, ranked] of ranking.entries()) {
+          write(
+            `${index + 1}. ${ranked.fileName} - Nihai skor: ${numberFmt(ranked.finalScore, 4)} - Sistem enerjisi: ${numberFmt(
+              ranked.totalSystemEnergy
+            )} kWh`,
+            10
+          );
         }
+      }
+
+      if (aiReport) {
+        write("AI Karşılaştırma Raporu", 13, 8);
+        write(aiReport, 10, 5.4);
+      }
+
+      if (aiActionPlan.length > 0) {
+        write("Aksiyon Planı", 13, 8);
+        for (const item of aiActionPlan) write(`- ${item}`, 10);
       }
 
       pdf.save(`designbuilder-rapor-${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -281,7 +298,6 @@ export default function DesignBuilderOptimization() {
       setIsExportingPdf(false);
     }
   };
-
   const generateAiInsights = async () => {
     if (!winner || ranking.length === 0) return;
 
@@ -325,14 +341,14 @@ export default function DesignBuilderOptimization() {
   };
 
   return (
-    <div className="space-y-6" ref={pdfRootRef}>
+    <div className="space-y-6">
       <section className="rounded-3xl border border-cyan-100 bg-white/90 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="inline-flex rounded-full border border-cyan-300 bg-cyan-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-cyan-800">
               DesignBuilder Optimizasyon
             </p>
-            <h2 className="mt-2 text-2xl font-black text-slate-900">Coklu Dosya Analizi + U Degeri Karsilastirma</h2>
+            <h2 className="mt-2 text-2xl font-black text-slate-900">Çoklu Dosya Analizi + U Değeri Karşılaştırma</h2>
           </div>
           <button
             type="button"
@@ -340,13 +356,13 @@ export default function DesignBuilderOptimization() {
             disabled={reports.length === 0 || isExportingPdf}
             className="inline-flex h-10 items-center gap-2 rounded-xl bg-amber-400 px-3 text-xs font-black text-slate-900 disabled:opacity-50"
           >
-            {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} PDF Indir
+            {isExportingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} PDF İndir
           </button>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_140px]">
           <label className="rounded-2xl border border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700">
-            CSV Dosyalari
+            CSV Dosyaları
             <input
               type="file"
               accept=".csv,text/csv"
@@ -357,31 +373,31 @@ export default function DesignBuilderOptimization() {
           </label>
 
           <label className="rounded-2xl border border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700">
-            U Degeri (ops.)
+            U Değeri (ops.)
             <input
               value={manualUValue}
               onChange={(event) => setManualUValue(event.target.value)}
-              placeholder="Orn: 0,57"
+              placeholder="Örn: 0,57"
               className="mt-2 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-900 outline-none"
             />
           </label>
 
           <div className="flex h-full items-center rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-xs font-black text-cyan-900">
-            <Plus size={16} className="mr-2" /> Dosya secince otomatik kuyruga eklenir
+            <Plus size={16} className="mr-2" /> Dosya seçince otomatik kuyruğa eklenir
           </div>
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-4">
-          <MetricCard label="Queued" value={String(queueCounts.queued)} />
-          <MetricCard label="Processing" value={String(queueCounts.processing)} />
-          <MetricCard label="Completed" value={String(queueCounts.completed)} />
-          <MetricCard label="Failed" value={String(queueCounts.failed)} />
+          <MetricCard label="Bekleyen" value={String(queueCounts.queued)} />
+          <MetricCard label="İşleniyor" value={String(queueCounts.processing)} />
+          <MetricCard label="Tamamlandı" value={String(queueCounts.completed)} />
+          <MetricCard label="Hatalı" value={String(queueCounts.failed)} />
         </div>
 
         <div className="mt-4 space-y-2">
           {queue.length === 0 ? (
             <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-500">
-              Kuyruk bos. CSV sectiginde dosyalar otomatik eklenir.
+              Kuyruk boş. CSV seçtiğinde dosyalar otomatik eklenir.
             </p>
           ) : (
             queue.map((item, index) => (
@@ -394,7 +410,7 @@ export default function DesignBuilderOptimization() {
                   </p>
                 </div>
                 <label className="min-w-[140px] flex-1 text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
-                  U Override
+                  U Değeri
                   <input
                     value={item.manualUValue}
                     onChange={(event) => updateQueueManualUValue(item.id, event.target.value)}
@@ -424,7 +440,7 @@ export default function DesignBuilderOptimization() {
             className="inline-flex h-11 items-center gap-2 rounded-2xl bg-emerald-500 px-4 text-sm font-black text-white disabled:opacity-50"
           >
             {processing ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-            {processingId ? "Sirali analiz calisiyor" : "Analizi Baslat"}
+            {processingId ? "Sıralı analiz çalışıyor" : "Analizi Başlat"}
           </button>
 
           <button
@@ -433,18 +449,18 @@ export default function DesignBuilderOptimization() {
             disabled={processing}
             className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-300 px-4 text-sm font-black text-slate-700 disabled:opacity-40"
           >
-            <RefreshCcw size={16} /> Sifirla
+            <RefreshCcw size={16} /> Sıfırla
           </button>
         </div>
       </section>
 
-      <div className="space-y-6" ref={pdfSectionsRef}>
+      <div className="space-y-6">
       <section data-pdf-section="1" className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-black text-slate-900">Dosya Bazli Detayli Raporlar</h3>
+        <h3 className="text-lg font-black text-slate-900">Dosya Bazlı Detaylı Raporlar</h3>
 
         {reports.length === 0 ? (
           <p className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-500">
-            Henuz rapor uretilmedi.
+            Henüz rapor üretilmedi.
           </p>
         ) : (
           <div className="mt-4 space-y-4">
@@ -466,27 +482,27 @@ export default function DesignBuilderOptimization() {
                   </div>
 
                   <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    <MetricCard label="Toplam Heating" value={numberFmt(report.totalHeatingGas)} />
-                    <MetricCard label="Toplam Cooling" value={numberFmt(report.totalCoolingElectricity)} />
+                    <MetricCard label="Toplam Isıtma" value={numberFmt(report.totalHeatingGas)} />
+                    <MetricCard label="Toplam Soğutma" value={numberFmt(report.totalCoolingElectricity)} />
                     <MetricCard label="Toplam Sistem" value={numberFmt(report.totalSystemEnergy)} />
-                    <MetricCard label="Konfor Bandi" value={`%${numberFmt(report.comfortBandRate * 100, 1)}`} />
+                    <MetricCard label="Konfor Bandı" value={`%${numberFmt(report.comfortBandRate * 100, 1)}`} />
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
                     <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">HVAC: {numberFmt(report.hvacTotal)}</span>
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Fan + Pump: {numberFmt(report.totalParasiticEnergy)}</span>
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Temp Swing: {numberFmt(report.temperatureSwing, 2)} C</span>
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Peak Heat: {report.peakHeatingMonth ?? "-"}</span>
-                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Peak Cool: {report.peakCoolingMonth ?? "-"}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Fan + Pompa: {numberFmt(report.totalParasiticEnergy)}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Sıcaklık Salınımı: {numberFmt(report.temperatureSwing, 2)} C</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Tepe Isıtma: {report.peakHeatingMonth ?? "-"}</span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Tepe Soğutma: {report.peakCoolingMonth ?? "-"}</span>
                   </div>
 
                 <div className="mt-4 grid gap-4 xl:grid-cols-2">
                   <div>
-                    <p className="mb-2 inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-600"><BarChart3 size={12} /> Enerji Dagilimi</p>
+                    <p className="mb-2 inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-600"><BarChart3 size={12} /> Enerji Dağılımı</p>
                     <EnergyChart months={report.months} />
                   </div>
                   <div>
-                    <p className="mb-2 inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-600"><BarChart3 size={12} /> Sicaklik Trendi</p>
+                    <p className="mb-2 inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.1em] text-slate-600"><BarChart3 size={12} /> Sıcaklık Trendi</p>
                     <TemperatureChart months={report.months} />
                   </div>
                 </div>
@@ -497,11 +513,11 @@ export default function DesignBuilderOptimization() {
       </section>
 
       <section data-pdf-section="1" className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-        <h3 className="text-lg font-black text-slate-900">Nihai Karsilastirma</h3>
+        <h3 className="text-lg font-black text-slate-900">Nihai Karşılaştırma</h3>
 
         {!winner ? (
           <p className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm font-semibold text-slate-500">
-            Karsilastirma icin once rapor olustur.
+            Karşılaştırma için önce rapor oluştur.
           </p>
         ) : (
           <div className="mt-4 space-y-3">
@@ -509,7 +525,7 @@ export default function DesignBuilderOptimization() {
               <p className="text-[11px] font-black uppercase tracking-[0.14em] text-emerald-700">Kazanan Senaryo</p>
               <h4 className="mt-1 inline-flex items-center gap-2 text-lg font-black text-slate-900"><Trophy size={18} /> {winner.fileName}</h4>
               <p className="mt-1 text-sm font-semibold text-slate-700">
-                U: {winner.uValue !== null ? numberFmt(winner.uValue, 3) : "bilinmiyor"} · Final Score: {numberFmt(winner.finalScore, 4)}
+                U: {winner.uValue !== null ? numberFmt(winner.uValue, 3) : "bilinmiyor"} · Nihai Skor: {numberFmt(winner.finalScore, 4)}
               </p>
             </div>
 
@@ -517,20 +533,20 @@ export default function DesignBuilderOptimization() {
               <>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <MetricCard
-                    label="Onerilen U"
+                    label="Önerilen U"
                     value={recommendation.recommendedUValue !== null ? numberFmt(recommendation.recommendedUValue, 3) : "eksik"}
                   />
-                  <MetricCard label="Guven" value={`${recommendation.confidenceLabel} (${recommendation.confidenceScore}/100)`} />
+                  <MetricCard label="Güven" value={`${recommendation.confidenceLabel} (${recommendation.confidenceScore}/100)`} />
                   <MetricCard label="Sistem Tasarrufu" value={`%${numberFmt(recommendation.savingsVsReferencePct, 2)}`} />
                   <MetricCard label="HVAC Tasarrufu" value={`%${numberFmt(recommendation.hvacSavingsVsReferencePct, 2)}`} />
                 </div>
 
                 <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
-                  <p className="text-sm font-black text-cyan-900">Karar Ozeti</p>
+                  <p className="text-sm font-black text-cyan-900">Karar Özeti</p>
                   <p className="mt-2 text-sm font-semibold text-cyan-950">{recommendation.reasonSummary}</p>
                   <div className="mt-3 grid gap-3 lg:grid-cols-2">
                     <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-cyan-700">Guclu Gerekceler</p>
+                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-cyan-700">Güçlü Gerekçeler</p>
                       <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-cyan-950">
                         {recommendation.reasons.map((item) => (
                           <li key={item}>{item}</li>
@@ -538,7 +554,7 @@ export default function DesignBuilderOptimization() {
                       </ul>
                     </div>
                     <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-cyan-700">Dikkat Noktalari</p>
+                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-cyan-700">Dikkat Noktaları</p>
                       {recommendation.watchouts.length > 0 ? (
                         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-cyan-950">
                           {recommendation.watchouts.map((item) => (
@@ -546,7 +562,7 @@ export default function DesignBuilderOptimization() {
                           ))}
                         </ul>
                       ) : (
-                        <p className="mt-2 text-sm font-semibold text-cyan-950">Bu veri setinde belirgin bir ek risk notu olusmadi.</p>
+                        <p className="mt-2 text-sm font-semibold text-cyan-950">Bu veri setinde belirgin bir ek risk notu oluşmadı.</p>
                       )}
                     </div>
                   </div>
@@ -555,9 +571,9 @@ export default function DesignBuilderOptimization() {
                 {insightPayload.trendPoints.length > 0 ? (
                   <div className="overflow-hidden rounded-2xl border border-slate-200">
                     <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-                      <p className="text-sm font-black text-slate-900">U Degeri Trendi</p>
+                      <p className="text-sm font-black text-slate-900">U Değeri Trendi</p>
                       <p className="text-xs font-semibold text-slate-600">
-                        Trend: {recommendation.trendDirection} · Test araligi: {recommendation.testedRange ? `${numberFmt(recommendation.testedRange[0], 3)} - ${numberFmt(recommendation.testedRange[1], 3)}` : "yetersiz"}
+                        Trend: {recommendation.trendDirection} · Test aralığı: {recommendation.testedRange ? `${numberFmt(recommendation.testedRange[0], 3)} - ${numberFmt(recommendation.testedRange[1], 3)}` : "yetersiz"}
                       </p>
                     </div>
                     <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -567,7 +583,7 @@ export default function DesignBuilderOptimization() {
                           <th className="px-3 py-2 text-left font-black">U</th>
                           <th className="px-3 py-2 text-left font-black">Sistem</th>
                           <th className="px-3 py-2 text-left font-black">Konfor</th>
-                          <th className="px-3 py-2 text-left font-black">Score</th>
+                          <th className="px-3 py-2 text-left font-black">Skor</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 bg-white text-slate-700">
@@ -588,15 +604,15 @@ export default function DesignBuilderOptimization() {
                 {insightPayload.monthlyDeltas.length > 0 ? (
                   <div className="grid gap-3 lg:grid-cols-2">
                     <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-sm font-black text-slate-900">Aylik En Iyi Kazanim</p>
+                      <p className="text-sm font-black text-slate-900">Aylık En İyi Kazanım</p>
                       <p className="mt-2 text-sm font-semibold text-slate-700">
-                        {insightPayload.biggestSavingsMonth?.label ?? "-"} ayinda toplam sistem iyilesmesi {numberFmt(Math.abs(insightPayload.biggestSavingsMonth?.systemEnergyDelta ?? 0))} kWh.
+                        {insightPayload.biggestSavingsMonth?.label ?? "-"} ayında toplam sistem iyileşmesi {numberFmt(Math.abs(insightPayload.biggestSavingsMonth?.systemEnergyDelta ?? 0))} kWh.
                       </p>
                     </article>
                     <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-sm font-black text-slate-900">Aylik En Zayif Nokta</p>
+                      <p className="text-sm font-black text-slate-900">Aylık En Zayıf Nokta</p>
                       <p className="mt-2 text-sm font-semibold text-slate-700">
-                        {insightPayload.biggestPenaltyMonth?.label ?? "-"} ayinda toplam sistem sapmasi {numberFmt(Math.max(0, insightPayload.biggestPenaltyMonth?.systemEnergyDelta ?? 0))} kWh.
+                        {insightPayload.biggestPenaltyMonth?.label ?? "-"} ayında toplam sistem sapması {numberFmt(Math.max(0, insightPayload.biggestPenaltyMonth?.systemEnergyDelta ?? 0))} kWh.
                       </p>
                     </article>
                   </div>
@@ -609,11 +625,11 @@ export default function DesignBuilderOptimization() {
                 <thead className="bg-slate-100 text-slate-700">
                   <tr>
                     <th className="px-3 py-2 text-left font-black">Dosya</th>
-                    <th className="px-3 py-2 text-left font-black">U Degeri</th>
+                    <th className="px-3 py-2 text-left font-black">U Değeri</th>
                     <th className="px-3 py-2 text-left font-black">Sistem</th>
                     <th className="px-3 py-2 text-left font-black">HVAC</th>
                     <th className="px-3 py-2 text-left font-black">Konfor</th>
-                    <th className="px-3 py-2 text-left font-black">Final Score</th>
+                    <th className="px-3 py-2 text-left font-black">Nihai Skor</th>
                     <th className="px-3 py-2 text-left font-black">Durum</th>
                   </tr>
                 </thead>
@@ -632,7 +648,7 @@ export default function DesignBuilderOptimization() {
                           {isWinner ? (
                             <span className="inline-flex items-center gap-1 font-black text-emerald-700"><CheckCircle2 size={14} /> En iyi</span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 font-black text-amber-700"><AlertTriangle size={14} /> Karsilastirildi</span>
+                            <span className="inline-flex items-center gap-1 font-black text-amber-700"><AlertTriangle size={14} /> Karşılaştırıldı</span>
                           )}
                         </td>
                       </tr>
@@ -650,7 +666,7 @@ export default function DesignBuilderOptimization() {
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-3 text-xs font-black text-white disabled:opacity-60"
               >
                 {isAiLoading ? <Loader2 size={14} className="animate-spin" /> : <BarChart3 size={14} />}
-                AI Karsilastirma Raporu Uret
+                AI Karşılaştırma Raporu Üret
               </button>
             </div>
 
@@ -660,13 +676,13 @@ export default function DesignBuilderOptimization() {
 
             {aiReport ? (
               <article className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-700">AI Muhendislik Yorumu</p>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-violet-700">AI Mühendislik Yorumu</p>
                 <div className="prose prose-sm max-w-none text-violet-950">
                   <ReactMarkdown>{aiReport}</ReactMarkdown>
                 </div>
                 {aiMeta ? (
                   <p className="mt-3 text-[11px] font-semibold text-violet-700">
-                    {aiMeta.fallbackUsed ? "Yerel teknik fallback kullanildi." : `Model: ${aiMeta.model ?? "AI"}`}
+                    {aiMeta.fallbackUsed ? "Yerel teknik yedek analiz kullanıldı." : `Model: ${aiMeta.model ?? "AI"}`}
                   </p>
                 ) : null}
               </article>
@@ -674,7 +690,7 @@ export default function DesignBuilderOptimization() {
 
             {aiActionPlan.length > 0 ? (
               <article className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
-                <p className="mb-2 text-sm font-bold text-sky-800">AI Aksiyon Plani</p>
+                <p className="mb-2 text-sm font-bold text-sky-800">AI Aksiyon Planı</p>
                 <ul className="list-disc space-y-1 pl-5 text-sm text-sky-900">
                   {aiActionPlan.map((item, index) => (
                     <li key={`${index}-${item}`}>{item}</li>

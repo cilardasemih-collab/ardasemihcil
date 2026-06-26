@@ -14,41 +14,64 @@ type OptimizationDashboardProps = {
 
 const numberFmt = (value: number, digits = 2) => new Intl.NumberFormat("tr-TR", { maximumFractionDigits: digits }).format(value);
 
-const buildMarkdownTable = (scenarios: OptimizationScenarioDossier[], currencySymbol: string) => {
-  const rows = [
-    "| Senaryo | Enerji (kWh) | CAPEX | Karbon (kg) | ROI (yıl) | Konfor | Score |",
-    "|---------|-------------|-------|------------|----------|--------|-------|",
-    ...scenarios.map(
-      (s) =>
-        `| ${s.scenarioName} | ${numberFmt(s.annualEnergyKwh, 0)} | ${currencySymbol}${numberFmt(s.capex, 0)} | ${numberFmt(s.annualCarbonKg, 0)} | ${s.roiYears !== null ? numberFmt(s.roiYears, 1) : "-"} | ${numberFmt(s.comfortScore, 0)}/100 | **${numberFmt(s.finalScore, 2)}** |`
-    ),
-  ];
-  return rows.join("\n");
+const addPdfText = (
+  pdf: import("jspdf").jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  options: { fontSize?: number; maxWidth?: number; lineHeight?: number } = {}
+) => {
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const lineHeight = options.lineHeight ?? 6;
+  pdf.setFontSize(options.fontSize ?? 10);
+  const lines = pdf.splitTextToSize(text, options.maxWidth ?? 180);
+  for (const line of lines) {
+    if (y > pageHeight - 16) {
+      pdf.addPage();
+      y = 18;
+    }
+    pdf.text(line, x, y);
+    y += lineHeight;
+  }
+  return y;
 };
 
-const handleExportPdf = (result: OptimizationComparisonResult) => {
-  // Simple PDF export via HTML print
-  const content = `
-    <h1>Optimizasyon Raporu</h1>
-    <h2>Kazanan Senaryo: ${result.winner.scenarioName}</h2>
-    <p>Final Score: ${numberFmt(result.winner.finalScore, 3)}</p>
-    <p>Yıllık Enerji: ${numberFmt(result.winner.annualEnergyKwh)} kWh</p>
-    <p>Yıllık Maliyet: ${result.currency.symbol}${numberFmt(result.winner.annualOpexEstimate)}</p>
-    <p>Karbon Salımı: ${numberFmt(result.winner.annualCarbonKg)} kgCO₂/yıl</p>
-    <h2>Senaryo Karşılaştırması</h2>
-    ${buildMarkdownTable(result.scenarios, result.currency.symbol)}
-    <h2>Bölüm Bazlı Kazananlar</h2>
-    <ul>${result.sectionWinners.map((item) => `<li>${item.sectionTitle}: ${item.winnerScenarioName} - ${item.reason}</li>`).join("")}</ul>
-    <h2>Stratejist Karar</h2>
-    <p>${result.strategistSummary}</p>
-  `;
-  
-  const printWindow = window.open("", "", "width=900,height=600");
-  if (printWindow) {
-    printWindow.document.write(content);
-    printWindow.document.close();
-    printWindow.print();
+const handleExportPdf = async (result: OptimizationComparisonResult) => {
+  const { jsPDF } = await import("jspdf");
+  const pdf = new jsPDF("p", "mm", "a4");
+  let y = 18;
+
+  pdf.setTextColor(15, 23, 42);
+  y = addPdfText(pdf, "DesignBuilder Karşılaştırma Raporu", 14, y, { fontSize: 18, lineHeight: 9 });
+  y = addPdfText(pdf, `Kazanan Senaryo: ${result.winner.scenarioName}`, 14, y + 3, { fontSize: 13, lineHeight: 7 });
+  y = addPdfText(pdf, `Toplam Skor: ${numberFmt(result.winner.finalScore, 3)}`, 14, y, { fontSize: 11 });
+  y = addPdfText(pdf, `Yıllık Enerji: ${numberFmt(result.winner.annualEnergyKwh)} kWh`, 14, y);
+  y = addPdfText(pdf, `Yıllık Maliyet: ${result.currency.symbol}${numberFmt(result.winner.annualOpexEstimate)} ${result.currency.code}`, 14, y);
+  y = addPdfText(pdf, `Karbon Salımı: ${numberFmt(result.winner.annualCarbonKg)} kgCO2/yıl`, 14, y);
+
+  y = addPdfText(pdf, "Senaryo Karşılaştırması", 14, y + 6, { fontSize: 14, lineHeight: 8 });
+  for (const scenario of result.scenarios) {
+    y = addPdfText(
+      pdf,
+      `${scenario.scenarioName}: Enerji ${numberFmt(scenario.annualEnergyKwh, 0)} kWh, CAPEX ${result.currency.symbol}${numberFmt(
+        scenario.capex,
+        0
+      )}, Karbon ${numberFmt(scenario.annualCarbonKg, 0)} kg, Skor ${numberFmt(scenario.finalScore, 2)}`,
+      14,
+      y,
+      { maxWidth: 180 }
+    );
   }
+
+  y = addPdfText(pdf, "Bölüm Bazlı Kazananlar", 14, y + 6, { fontSize: 14, lineHeight: 8 });
+  for (const item of result.sectionWinners) {
+    y = addPdfText(pdf, `${item.sectionTitle}: ${item.winnerScenarioName} - ${item.reason}`, 14, y, { maxWidth: 180 });
+  }
+
+  y = addPdfText(pdf, "Stratejist Karar Özeti", 14, y + 6, { fontSize: 14, lineHeight: 8 });
+  addPdfText(pdf, result.strategistSummary, 14, y, { maxWidth: 180 });
+
+  pdf.save(`designbuilder-karsilastirma-${new Date().toISOString().slice(0, 10)}.pdf`);
 };
 
 export default function OptimizationDashboard({ result }: OptimizationDashboardProps) {
@@ -86,7 +109,7 @@ export default function OptimizationDashboard({ result }: OptimizationDashboardP
           </p>
         </div>
         <Button
-          onClick={() => handleExportPdf(result)}
+          onClick={() => void handleExportPdf(result)}
           className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
         >
           📥 PDF İndir
@@ -280,7 +303,7 @@ export default function OptimizationDashboard({ result }: OptimizationDashboardP
               <h4 className="mt-1 text-sm font-black text-slate-900">{item.sectionTitle}</h4>
               <p className="mt-2 text-sm font-bold text-slate-800">Galip: {item.winnerScenarioName}</p>
               <p className="mt-2 text-xs leading-5 text-slate-700">{item.reason}</p>
-              <p className="mt-2 text-xs font-black text-slate-500">Bolum skoru: {numberFmt(item.score, 2)}</p>
+              <p className="mt-2 text-xs font-black text-slate-500">Bölüm skoru: {numberFmt(item.score, 2)}</p>
             </article>
           ))}
         </div>

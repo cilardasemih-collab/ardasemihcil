@@ -72,7 +72,7 @@ const saveComparisonResult = async (result: Awaited<ReturnType<typeof buildOptim
       project_id: result.winner.projectId,
       project_name: result.winner.projectName,
       result_type: "comparison",
-      title: `${result.winner.projectName} - DesignBuilder Karsilastirma Sonucu`,
+      title: `${result.winner.projectName} - DesignBuilder Karşılaştırma Sonucu`,
       winner_scenario_id: result.winner.scenarioId,
       winner_scenario_name: result.winner.scenarioName,
       scenario_ids: result.scenarios.map((scenario) => scenario.scenarioId),
@@ -80,7 +80,28 @@ const saveComparisonResult = async (result: Awaited<ReturnType<typeof buildOptim
     });
 
     if (error) {
-      return error.message;
+      const fallbackGroupId = crypto.randomUUID();
+      const fallbackError = await supabase.from("reports").insert({
+        report_group_id: fallbackGroupId,
+        scenario_id: result.winner.scenarioId,
+        language: "tr",
+        report_title: `${result.winner.projectName} - DesignBuilder Karşılaştırma Sonucu`,
+        section_key: "comparison_result",
+        section_title: "DesignBuilder Karşılaştırma Sonucu",
+        section_order: 1,
+        status: "completed",
+        section_content: result.strategistSummary,
+        section_summary: `${result.winner.scenarioName} en yüksek toplam skoru aldı.`,
+        context_snapshot: {
+          comparisonResult: result,
+          savedVia: "reports_fallback",
+          originalError: error.message,
+        },
+      });
+
+      if (fallbackError.error) {
+        return `${error.message}; yedek kayıt da yapılamadı: ${fallbackError.error.message}`;
+      }
     }
   } catch (error) {
     return error instanceof Error ? error.message : "DesignBuilder sonucu kaydedilemedi.";
@@ -157,7 +178,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (summaries.length < 2) {
-      return NextResponse.json({ success: false, error: "Karsilastirma icin en az iki scenario ozeti gerekli." });
+      return NextResponse.json({ success: false, error: "Karşılaştırma için en az iki senaryo özeti gerekli." });
     }
 
     const result = await buildOptimizationDecision({
@@ -178,7 +199,7 @@ export async function POST(request: NextRequest) {
       saveWarning,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Optimization karsilastirmasi sirasinda hata olustu.";
+    const message = error instanceof Error ? error.message : "Optimizasyon karşılaştırması sırasında hata oluştu.";
     return NextResponse.json({ success: false, error: message });
   }
 }

@@ -114,39 +114,50 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
   ];
 
   const exportPdf = async () => {
-    if (!exportRootRef.current || sections.length === 0) return;
+    if (sections.length === 0) return;
     setIsExporting(true);
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+      const { jsPDF } = await import("jspdf");
       const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 8;
-      const contentWidth = pageWidth - margin * 2;
-      const pages = Array.from(exportRootRef.current.querySelectorAll<HTMLElement>("[data-report-page='1']"));
-      let firstPage = true;
-
-      for (const page of pages) {
-        const canvas = await html2canvas(page, {
-          scale: 2,
-          backgroundColor: "#ffffff",
-          useCORS: true,
-        });
-        const imgData = canvas.toDataURL("image/png");
-        const imgHeight = (canvas.height * contentWidth) / canvas.width;
-        if (!firstPage) pdf.addPage();
-        firstPage = false;
-        let remainingHeight = imgHeight;
-        let positionY = margin;
-        pdf.addImage(imgData, "PNG", margin, positionY, contentWidth, imgHeight, undefined, "FAST");
-        remainingHeight -= pageHeight - margin * 2;
-
-        while (remainingHeight > 0) {
-          pdf.addPage();
-          positionY = margin - (imgHeight - remainingHeight);
-          pdf.addImage(imgData, "PNG", margin, positionY, contentWidth, imgHeight, undefined, "FAST");
-          remainingHeight -= pageHeight - margin * 2;
+      const margin = 14;
+      const maxWidth = 182;
+      let y = 18;
+      const write = (text: string, fontSize = 10, lineHeight = 6) => {
+        pdf.setFontSize(fontSize);
+        const lines = pdf.splitTextToSize(text.replace(/\n{3,}/g, "\n\n"), maxWidth);
+        for (const line of lines) {
+          if (y > pageHeight - margin) {
+            pdf.addPage();
+            y = 18;
+          }
+          pdf.text(line, margin, y);
+          y += lineHeight;
         }
+      };
+
+      write(reportTitle, 16, 8);
+      write("DesignBuilder teknik raporu", 11, 7);
+      y += 4;
+
+      if (scenarioSummary) {
+        write(`Proje: ${scenarioSummary.scenario.projectName}`, 11);
+        write(`Senaryo: ${scenarioSummary.scenario.name}`, 11);
+        write(`Konum: ${scenarioSummary.scenario.location ?? "Belirtilmedi"}`, 11);
+        write(`Satır: ${scenarioSummary.summary.rowCount} | Zon: ${scenarioSummary.summary.zoneCount}`, 10);
+        write(
+          `Isıtma: ${numberFmt(scenarioSummary.summary.metrics.heatingLoad.sum)} kWh | Soğutma: ${numberFmt(
+            scenarioSummary.summary.metrics.coolingLoad.sum
+          )} kWh | Ortalama sıcaklık: ${numberFmt(scenarioSummary.summary.metrics.airTemperature.avg)} C`,
+          10
+        );
+        y += 4;
+      }
+
+      for (const section of [...sections].sort((a, b) => a.sectionOrder - b.sectionOrder)) {
+        write(`${section.sectionOrder}. ${section.sectionTitle}`, 13, 7);
+        write(section.sectionContent || "Bu bölüm henüz tamamlanmamış.", 10, 5.4);
+        y += 5;
       }
 
       pdf.save(`designbuilder-report-${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -159,42 +170,42 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Report Viewer</p>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Rapor Görüntüleyici</p>
           <h3 className="mt-1 text-xl font-black text-slate-900">{reportTitle}</h3>
         </div>
         <Button type="button" className="bg-amber-400 text-slate-900 hover:bg-amber-300" onClick={exportPdf} disabled={isExporting || sections.length === 0}>
-          {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} PDF Export
+          {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} PDF İndir
         </Button>
       </div>
 
       <div ref={exportRootRef} className="space-y-6">
         <article data-report-page="1" className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc,#ffffff)] p-8">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">DesignBuilder Report</p>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">DesignBuilder Raporu</p>
           <h2 className="mt-4 text-3xl font-black text-slate-900">{reportTitle}</h2>
-          <p className="mt-3 text-sm text-slate-600">Simulasyon verisi, bolumlu muhendislik yorumu ve performans gostergeleri birlikte sunulmustur.</p>
+          <p className="mt-3 text-sm text-slate-600">Simülasyon verisi, bölümlü mühendislik yorumu ve performans göstergeleri birlikte sunulmuştur.</p>
         </article>
 
         {scenarioSummary ? (
           <article data-report-page="1" className="rounded-[28px] border border-slate-200 bg-white p-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Performans Ozeti</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Performans Özeti</p>
                 <h3 className="mt-2 text-2xl font-black text-slate-900">{scenarioSummary.scenario.name}</h3>
                 <p className="mt-1 text-sm text-slate-600">
                   {scenarioSummary.scenario.projectName} · {scenarioSummary.scenario.location ?? "Konum belirtilmedi"}
                 </p>
               </div>
               <div className="text-right text-xs font-semibold text-slate-500">
-                {scenarioSummary.summary.rowCount} satir · {scenarioSummary.summary.zoneCount} zon
+                {scenarioSummary.summary.rowCount} satır · {scenarioSummary.summary.zoneCount} zon
               </div>
             </div>
 
             <div className="mt-6 grid gap-3 md:grid-cols-4">
               {[
-                ["Isitma", `${numberFmt(scenarioSummary.summary.metrics.heatingLoad.sum)} kWh`],
-                ["Sogutma", `${numberFmt(scenarioSummary.summary.metrics.coolingLoad.sum)} kWh`],
-                ["Ort. Sicaklik", `${numberFmt(scenarioSummary.summary.metrics.airTemperature.avg)} C`],
-                ["Pik Isitma", numberFmt(scenarioSummary.summary.peaks.heating?.value)],
+                ["Isıtma", `${numberFmt(scenarioSummary.summary.metrics.heatingLoad.sum)} kWh`],
+                ["Soğutma", `${numberFmt(scenarioSummary.summary.metrics.coolingLoad.sum)} kWh`],
+                ["Ort. Sıcaklık", `${numberFmt(scenarioSummary.summary.metrics.airTemperature.avg)} C`],
+                ["Pik Isıtma", numberFmt(scenarioSummary.summary.peaks.heating?.value)],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
@@ -212,8 +223,8 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="heating" name="Isitma" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="cooling" name="Sogutma" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="heating" name="Isıtma" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="cooling" name="Soğutma" fill="#2563eb" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -222,8 +233,8 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
               <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-900">Sektor Normu Karsilastirmasi</p>
-                    <p className="text-xs text-slate-600">{benchmark.label} · kWh/m2-yil</p>
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-900">Sektör Normu Karşılaştırması</p>
+                    <p className="text-xs text-slate-600">{benchmark.label} · kWh/m2-yıl</p>
                   </div>
                   <p className="text-lg font-black text-slate-900">{numberFmt(energyIntensity)} kWh/m2-yil</p>
                 </div>
@@ -265,7 +276,7 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Page {section.sectionOrder + 2}</p>
                   <h4 className="mt-1 text-xl font-black text-slate-900">{section.sectionTitle}</h4>
                   <p className="mt-1 text-xs font-semibold text-slate-600">
-                    Bu bolum kendi kartinda duzenlenir, kaydedilir veya yeniden uretilir.
+                    Bu bölüm kendi kartında düzenlenir, kaydedilir veya yeniden üretilir.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -282,7 +293,7 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
                       }
                     }}
                   >
-                    {busyKey === section.sectionKey ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Yeniden Uret
+                    {busyKey === section.sectionKey ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Yeniden Üret
                   </Button>
                   {isEditing ? (
                     <Button
@@ -303,7 +314,7 @@ export default function ReportViewer({ reportTitle, sections, onRegenerate, onSa
                     </Button>
                   ) : (
                     <Button type="button" variant="outline" onClick={() => setEditingKey(section.sectionKey)}>
-                      <Edit3 className="mr-2 h-4 w-4" /> Duzenle
+                      <Edit3 className="mr-2 h-4 w-4" /> Düzenle
                     </Button>
                   )}
                 </div>

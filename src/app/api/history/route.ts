@@ -28,6 +28,7 @@ type ReportHistoryRow = {
   section_order: number;
   status: string;
   section_content: string | null;
+  context_snapshot?: { comparisonResult?: unknown } | null;
   created_at: string;
   updated_at: string;
   scenarios?:
@@ -85,7 +86,7 @@ export async function GET() {
         supabase
           .from("reports")
           .select(
-            "id,report_group_id,scenario_id,language,report_title,section_key,section_title,section_order,status,section_content,created_at,updated_at,scenarios(name,total_energy_consumption,projects(name,location))"
+            "id,report_group_id,scenario_id,language,report_title,section_key,section_title,section_order,status,section_content,context_snapshot,created_at,updated_at,scenarios(name,total_energy_consumption,projects(name,location))"
           )
           .order("updated_at", { ascending: false }),
         supabase
@@ -128,9 +129,31 @@ export async function GET() {
       const scenario = firstItem(firstItem(first?.scenarios));
       const project = firstItem(scenario?.projects);
       const completedCount = sortedRows.filter((row) => row.status === "completed").length;
+      const comparisonSection = sortedRows.find((row) => row.section_key === "comparison_result");
       const latestUpdatedAt = sortedRows
         .map((row) => row.updated_at || row.created_at)
         .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+
+      if (comparisonSection) {
+        const comparisonPayload = comparisonSection.context_snapshot?.comparisonResult ?? null;
+
+        return {
+          id: groupId,
+          type: "designbuilder_comparison" as const,
+          title: first?.report_title ?? "DesignBuilder Karşılaştırma Sonucu",
+          created_at: latestUpdatedAt ?? first?.created_at ?? "",
+          projectName: project?.name ?? "DesignBuilder Projesi",
+          winnerScenarioName:
+            comparisonPayload && typeof comparisonPayload === "object"
+              ? String((comparisonPayload as { winner?: { scenarioName?: string } }).winner?.scenarioName ?? scenario?.name ?? "")
+              : scenario?.name ?? null,
+          scenarioIds:
+            comparisonPayload && typeof comparisonPayload === "object" && Array.isArray((comparisonPayload as { scenarios?: Array<{ scenarioId?: string }> }).scenarios)
+              ? ((comparisonPayload as { scenarios: Array<{ scenarioId?: string }> }).scenarios.map((item) => String(item.scenarioId ?? "")).filter(Boolean))
+              : [first?.scenario_id ?? ""].filter(Boolean),
+          payload: comparisonPayload,
+        };
+      }
 
       return {
         id: groupId,
@@ -172,10 +195,10 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       items: sortByCreatedAtDesc([...csvItems, ...reportItems, ...designResultItems]),
-      warnings: designResultError ? ["DesignBuilder karsilastirma tablosu henuz hazir degil."] : [],
+      warnings: designResultError ? ["DesignBuilder karşılaştırma tablosu henüz hazır değil; yedek kayıtlar rapor geçmişinden okunuyor."] : [],
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Gecmis kayitlari okunamadi.";
+    const message = error instanceof Error ? error.message : "Geçmiş kayıtları okunamadı.";
     return NextResponse.json({ success: false, error: message, items: [] }, { status: 200 });
   }
 }

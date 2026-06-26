@@ -83,11 +83,11 @@ const STORAGE_KEYS = {
 } as const;
 
 const stepDefinitions: Array<{ key: WizardStep; label: string; detail: string }> = [
-  { key: "project", label: "1. Proje", detail: "Proje sec veya olustur" },
-  { key: "upload", label: "2. Dosyalar", detail: "CSV dosyalarini yukle" },
-  { key: "preview", label: "3. Onizleme", detail: "Grafik ve veri kontrolu" },
-  { key: "reports", label: "4. Raporlama", detail: "Dosya dosya bolumlu rapor" },
-  { key: "comparison", label: "5. Karsilastirma", detail: "Tamamlanan raporlardan karar" },
+  { key: "project", label: "1. Proje", detail: "Proje seç veya oluştur" },
+  { key: "upload", label: "2. Dosyalar", detail: "CSV dosyalarını yükle" },
+  { key: "preview", label: "3. Önizleme", detail: "Grafik ve veri kontrolü" },
+  { key: "reports", label: "4. Raporlama", detail: "Dosya dosya bölümlü rapor" },
+  { key: "comparison", label: "5. Karşılaştırma", detail: "Tamamlanan raporlardan karar" },
 ];
 
 const numberFmt = (value: number | null | undefined, maximumFractionDigits = 2) =>
@@ -146,7 +146,7 @@ export default function DesignBuilderWorkspace() {
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [isDragging, setIsDragging] = useState(false);
   const [progressValue, setProgressValue] = useState(0);
-  const [message, setMessage] = useState("Once proje sec, sonra DesignBuilder CSV dosyalarini yukle.");
+  const [message, setMessage] = useState("Önce proje seç, sonra DesignBuilder CSV dosyalarını yükle.");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [previewRows, setPreviewRows] = useState<SimulationCsvPreviewRow[]>([]);
   const [selectedPreviewScenarioId, setSelectedPreviewScenarioId] = useState("");
@@ -355,7 +355,7 @@ export default function DesignBuilderWorkspace() {
       return;
     }
 
-    setAssumptionUploadState(`${uploadFiles.length} kabul dosyasi yukleniyor...`);
+    setAssumptionUploadState(`${uploadFiles.length} kabul dosyası yükleniyor...`);
     for (const file of uploadFiles) {
       const formData = new FormData();
       formData.append("file", file);
@@ -369,7 +369,7 @@ export default function DesignBuilderWorkspace() {
       });
       const payload = (await response.json().catch(() => ({}))) as { success?: boolean; error?: string; chunkCount?: number };
       if (!response.ok || !payload.success) {
-        setAssumptionUploadState(payload.error ?? `${file.name} yuklenemedi.`);
+        setAssumptionUploadState(payload.error ?? `${file.name} yüklenemedi.`);
         return;
       }
 
@@ -385,7 +385,7 @@ export default function DesignBuilderWorkspace() {
         ...prev,
       ]);
     }
-    setAssumptionUploadState("Kabul dosyalari projeye eklendi ve rapor baglamina hazirlandi.");
+    setAssumptionUploadState("Kabul dosyaları projeye eklendi ve rapor bağlamına hazırlandı.");
   };
 
   const handleCreateProject = () => {
@@ -460,19 +460,19 @@ export default function DesignBuilderWorkspace() {
     const project = projects.find((item) => item.id === scenario.project_id);
     const rows = scenarioRowsById[scenario.id];
     if (!project || !rows?.length) {
-      throw new Error(`${scenario.name} icin yerel veri bulunamadi; dosyayi tekrar yukle.`);
+      throw new Error(`${scenario.name} için yerel veri bulunamadı; dosyayı tekrar yükle.`);
     }
 
-    appendLog(`${scenario.name} rapor oncesi Supabase'e tekrar senkronlanıyor.`);
+    appendLog(`${scenario.name} rapor öncesi Supabase'e tekrar senkronlanıyor.`);
     await persistScenario(project, scenario, rows);
     setSyncedScenarioIds((prev) => ({ ...prev, [scenario.id]: true }));
-    appendLog(`${scenario.name} senkronu tamamlandi, rapora geciliyor.`);
+    appendLog(`${scenario.name} senkronu tamamlandı, rapora geçiliyor.`);
   };
 
   const handleFile = async (file: File) => {
     if (!selectedProject) {
       setUploadState("error");
-      setMessage("Once bir proje sec veya yeni proje olustur.");
+      setMessage("Önce bir proje seç veya yeni proje oluştur.");
       return;
     }
 
@@ -490,7 +490,7 @@ export default function DesignBuilderWorkspace() {
       onPreviewRows: setPreviewRows,
     });
     if (result.rows.length === 0) {
-      throw new Error(`${file.name} icinde raporlanabilir satir bulunamadi.`);
+      throw new Error(`${file.name} içinde raporlanabilir satır bulunamadı.`);
     }
     const totalEnergyConsumption = result.rows.reduce((sum, row) => sum + (row.heating_load ?? 0) + (row.cooling_load ?? 0), 0);
     const scenario: Scenario = {
@@ -542,7 +542,7 @@ export default function DesignBuilderWorkspace() {
       setProgressValue(100);
       setUploadState("done");
       setActiveStep("preview");
-      setMessage("Dosyalar yuklendi. Grafik onizleme ve veri kontrolu hazir.");
+    setMessage("Dosyalar yüklendi. Grafik önizleme ve veri kontrolü hazır.");
     } catch (error) {
       setUploadState("error");
       setMessage(error instanceof Error ? error.message : "CSV ayrisma sirasinda beklenmeyen hata.");
@@ -572,7 +572,7 @@ export default function DesignBuilderWorkspace() {
       error?: string;
     };
     if (!response.ok || !payload.success || !Array.isArray(payload.sections)) {
-      throw new Error(payload.error ?? "Rapor bolumleri okunamadi.");
+      throw new Error(payload.error ?? "Rapor bölümleri okunamadı.");
     }
     return payload.sections;
   };
@@ -585,7 +585,7 @@ export default function DesignBuilderWorkspace() {
       error?: string;
     };
     if (!response.ok || !payload.success || !Array.isArray(payload.sections)) {
-      throw new Error(payload.error ?? "Senaryo rapor bolumleri okunamadi.");
+      throw new Error(payload.error ?? "Senaryo rapor bölümleri okunamadı.");
     }
     return payload.sections;
   };
@@ -605,7 +605,7 @@ export default function DesignBuilderWorkspace() {
       }));
 
       if (allCompleted) return sections;
-      if (allFinished) throw new Error("Rapor bolumlerinden biri basarisiz oldu.");
+      if (allFinished) throw new Error("Rapor bölümlerinden biri başarısız oldu.");
       await sleep(1500);
     }
     throw new Error("Rapor uretimi zaman asimina ugradi.");
@@ -633,7 +633,7 @@ export default function DesignBuilderWorkspace() {
       if (sections[0]?.reportTitle) setActiveReportTitle(sections[0].reportTitle);
     } catch (error) {
       setReportSections([]);
-      setReportError(error instanceof Error ? error.message : "Rapor bolumleri okunamadi.");
+      setReportError(error instanceof Error ? error.message : "Rapor bölümleri okunamadı.");
     }
   };
 
@@ -650,7 +650,7 @@ export default function DesignBuilderWorkspace() {
         ? `${selectedProject?.name ?? "Project"} - ${scenario.name} Teknik Raporu`
         : `${selectedProject?.name ?? "Project"} - ${scenario.name} Technical Report`
     );
-    appendLog(`${scenario.name} icin bolumlu rapor uretimi basladi.`);
+    appendLog(`${scenario.name} için bölümlü rapor üretimi başladı.`);
 
     const response = await fetch("/api/reports/generate", {
       method: "POST",
@@ -666,7 +666,7 @@ export default function DesignBuilderWorkspace() {
     setActiveReportTitle(payload.reportTitle ?? activeReportTitle);
     const sections = await waitForReportCompletion(reportGroupId, scenario.id);
     setReportGroupByScenarioId((prev) => ({ ...prev, [scenario.id]: reportGroupId }));
-    appendLog(`${scenario.name} raporu tamamlandi.`);
+    appendLog(`${scenario.name} raporu tamamlandı.`);
     return { reportGroupId, sections };
   };
 
@@ -744,12 +744,12 @@ export default function DesignBuilderWorkspace() {
     setIsOptimizing(true);
     setOptimizationError("");
     setOptimizationResult(null);
-    appendLog("Karsilastirma raporu icin tamamlanmis raporlar okunuyor.");
+    appendLog("Karşılaştırma raporu için tamamlanmış raporlar okunuyor.");
 
     try {
       const scenarioPayloads = await buildScenarioPayloads(scenarioIds);
       if (scenarioPayloads.length < 2) {
-        throw new Error("Karsilastirma icin en az iki tamamlanmis senaryo raporu gerekli.");
+        throw new Error("Karşılaştırma için en az iki tamamlanmış senaryo raporu gerekli.");
       }
 
       const response = await fetch("/api/optimize-scenarios", {
@@ -781,7 +781,7 @@ export default function DesignBuilderWorkspace() {
         !payload.baselineScenarioId ||
         !payload.currency
       ) {
-        throw new Error(payload.error ?? "Karsilastirma raporu uretilemedi.");
+        throw new Error(payload.error ?? "Karşılaştırma raporu üretilemedi.");
       }
 
       setOptimizationResult({
@@ -793,12 +793,12 @@ export default function DesignBuilderWorkspace() {
         baselineScenarioId: payload.baselineScenarioId,
         currency: payload.currency,
       });
-      appendLog(payload.saveWarning ? `Karsilastirma tamamlandi; kayit uyarisi: ${payload.saveWarning}` : "Karsilastirma raporu kaydedildi.");
+      appendLog(payload.saveWarning ? `Karşılaştırma tamamlandı; kayıt uyarısı: ${payload.saveWarning}` : "Karşılaştırma raporu kaydedildi.");
       setActiveStep("comparison");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Karsilastirma raporu uretilemedi.";
+      const message = error instanceof Error ? error.message : "Karşılaştırma raporu üretilemedi.";
       setOptimizationError(message);
-      appendLog(`Karsilastirma raporu durdu: ${message}`);
+      appendLog(`Karşılaştırma raporu durdu: ${message}`);
     } finally {
       setIsOptimizing(false);
     }
@@ -806,7 +806,7 @@ export default function DesignBuilderWorkspace() {
 
   const runSequentialReportsAndComparison = async () => {
     if (projectScenarios.length === 0) {
-      setReportError("Once en az bir dosya yukle.");
+      setReportError("Önce en az bir dosya yükle.");
       return;
     }
 
@@ -829,7 +829,7 @@ export default function DesignBuilderWorkspace() {
       if (scenarioIds.length >= 2) {
         await runComparison(scenarioIds);
       } else {
-        appendLog("Tek senaryo raporu tamamlandi; karsilastirma icin ikinci dosya gerekli.");
+        appendLog("Tek senaryo raporu tamamlandı; karşılaştırma için ikinci dosya gerekli.");
       }
     } catch (error) {
       setReportError(error instanceof Error ? error.message : "Siralı raporlama akisi tamamlanamadi.");
@@ -958,24 +958,24 @@ export default function DesignBuilderWorkspace() {
               <Input value={newProjectBuildingType} onChange={(event) => setNewProjectBuildingType(event.target.value)} placeholder="Yapi tipi: ofis, okul, hastane..." />
               <Input value={newProjectFloorArea} onChange={(event) => setNewProjectFloorArea(event.target.value)} placeholder="Yaklasik alan m2" />
               <Input value={newProjectHvac} onChange={(event) => setNewProjectHvac(event.target.value)} placeholder="HVAC sistemi: VRF, chiller, kazan..." />
-              <Input value={newProjectOccupancy} onChange={(event) => setNewProjectOccupancy(event.target.value)} placeholder="Kullanim profili: 08:00-18:00, 7/24..." />
-              <Input value={newProjectWeatherFile} onChange={(event) => setNewProjectWeatherFile(event.target.value)} placeholder="EPW/weather file veya iklim kaynagi" />
-              <Input value={newProjectDesignGoal} onChange={(event) => setNewProjectDesignGoal(event.target.value)} placeholder="Tasarim hedefi: enerji, konfor, karbon..." />
+              <Input value={newProjectOccupancy} onChange={(event) => setNewProjectOccupancy(event.target.value)} placeholder="Kullanım profili: 08:00-18:00, 7/24..." />
+              <Input value={newProjectWeatherFile} onChange={(event) => setNewProjectWeatherFile(event.target.value)} placeholder="EPW/weather file veya iklim kaynağı" />
+              <Input value={newProjectDesignGoal} onChange={(event) => setNewProjectDesignGoal(event.target.value)} placeholder="Tasarım hedefi: enerji, konfor, karbon..." />
               <Button type="button" onClick={handleCreateProject} disabled={!newProjectName.trim()} className="bg-cyan-700 hover:bg-cyan-600 md:col-span-2">
-                Proje Olustur
+                Proje Oluştur
               </Button>
             </div>
             {selectedProject ? (
               <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-black text-slate-900">Proje Kabulleri ve Referans Dosyalari</p>
+                    <p className="text-sm font-black text-slate-900">Proje Kabulleri ve Referans Dosyaları</p>
                     <p className="text-xs text-slate-600">
-                      PDF/Excel yonetmelik, akademik makale, maliyet kabul tablosu veya ofis standardi yukle; secili proje raporlarinda kaynak olarak kullanilir.
+                      PDF/Excel yönetmelik, akademik makale, maliyet kabul tablosu veya ofis standardı yükle; seçili proje raporlarında kaynak olarak kullanılır.
                     </p>
                   </div>
                   <label className="cursor-pointer rounded-xl bg-violet-700 px-4 py-2 text-sm font-bold text-white hover:bg-violet-600">
-                    Kabul Dosyasi Yukle
+                    Kabul Dosyası Yükle
                     <input
                       type="file"
                       multiple
@@ -991,7 +991,7 @@ export default function DesignBuilderWorkspace() {
                 {assumptionUploadState ? <p className="mt-3 text-xs font-semibold text-violet-900">{assumptionUploadState}</p> : null}
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {assumptionDocs.filter((doc) => doc.projectId === selectedProject.id).length === 0 ? (
-                    <p className="text-xs text-slate-600">Bu proje icin henuz kabul dosyasi yok.</p>
+                    <p className="text-xs text-slate-600">Bu proje için henüz kabul dosyası yok.</p>
                   ) : (
                     assumptionDocs
                       .filter((doc) => doc.projectId === selectedProject.id)
@@ -999,7 +999,7 @@ export default function DesignBuilderWorkspace() {
                         <article key={doc.id} className="rounded-xl border border-violet-200 bg-white p-3">
                           <p className="text-xs font-black text-slate-900">{doc.name}</p>
                           <p className="mt-1 text-[11px] text-slate-600">
-                            {doc.kind} · {doc.chunkCount} parca · {new Date(doc.uploadedAt).toLocaleDateString("tr-TR")}
+                            {doc.kind} · {doc.chunkCount} parça · {new Date(doc.uploadedAt).toLocaleDateString("tr-TR")}
                           </p>
                         </article>
                       ))
@@ -1018,12 +1018,12 @@ export default function DesignBuilderWorkspace() {
               <div className="flex items-center gap-2">
                 <UploadCloud className="h-5 w-5 text-emerald-700" />
                 <div>
-                  <p className="text-sm font-black text-slate-900">Dosya Yukleme</p>
-                  <p className="text-xs text-slate-500">Bir veya birden cok DesignBuilder CSV dosyasi sec.</p>
+                  <p className="text-sm font-black text-slate-900">Dosya Yükleme</p>
+                  <p className="text-xs text-slate-500">Bir veya birden çok DesignBuilder CSV dosyası seç.</p>
                 </div>
               </div>
               <Button type="button" variant="outline" onClick={() => setActiveStep("preview")} disabled={projectScenarios.length === 0}>
-                Onizlemeye Gec
+                Önizlemeye Geç
               </Button>
             </div>
 
@@ -1043,11 +1043,11 @@ export default function DesignBuilderWorkspace() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
                 {uploadState === "parsing" ? <Loader2 className="h-6 w-6 animate-spin" /> : <FileSpreadsheet className="h-6 w-6" />}
               </div>
-              <p className="mt-4 text-lg font-black text-slate-900">CSV dosyalarini buraya birak</p>
+              <p className="mt-4 text-lg font-black text-slate-900">CSV dosyalarını buraya bırak</p>
               <p className="mt-2 text-sm text-slate-600">
                 {selectedProject
-                  ? `${selectedProject.name} projesine 2'den fazla CSV dosyasi ayni anda eklenebilir.`
-                  : "Once proje sec."}
+                  ? `${selectedProject.name} projesine 2'den fazla CSV dosyası aynı anda eklenebilir.`
+                  : "Önce proje seç."}
               </p>
             </div>
 
@@ -1078,9 +1078,9 @@ export default function DesignBuilderWorkspace() {
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-5 w-5 text-violet-700" />
                   <div>
-                    <p className="text-sm font-black text-slate-900">Grafikli Onizleme</p>
+                    <p className="text-sm font-black text-slate-900">Grafikli Önizleme</p>
                     <p className="text-xs text-slate-500">
-                      Enerji grafigi yuklenen tum dosyalari karsilastirir; satir onizleme secili dosyayi gosterir.
+                      Enerji grafiği yüklenen tüm dosyaları karşılaştırır; satır önizleme seçili dosyayı gösterir.
                     </p>
                   </div>
                 </div>
@@ -1099,7 +1099,7 @@ export default function DesignBuilderWorkspace() {
 
               <div className="grid min-w-0 gap-4 lg:grid-cols-2">
                 <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Senaryo Enerji Dagilimi</p>
+                  <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Senaryo Enerji Dağılımı</p>
                   <div className="h-72 min-h-[288px] min-w-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={scenarioEnergyData}>
@@ -1113,7 +1113,7 @@ export default function DesignBuilderWorkspace() {
                   </div>
                 </div>
                 <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Ilk 60 Satir Trendi</p>
+                  <p className="mb-3 text-xs font-black uppercase tracking-[0.12em] text-slate-500">İlk 60 Satır Trendi</p>
                   <div className="h-72 min-h-[288px] min-w-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={previewChartData}>
@@ -1136,10 +1136,10 @@ export default function DesignBuilderWorkspace() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-black text-slate-900">{scenario.name}</p>
-                        <p className="mt-1 text-xs text-slate-600">Satir: {scenarioRowsById[scenario.id]?.length ?? 0}</p>
+                        <p className="mt-1 text-xs text-slate-600">Satır: {scenarioRowsById[scenario.id]?.length ?? 0}</p>
                         <p className="mt-1 text-xs text-slate-600">Enerji: {numberFmt(scenario.total_energy_consumption)}</p>
                         <p className="mt-1 text-xs font-semibold text-slate-600">
-                          DB: {syncedScenarioIds[scenario.id] ? "Senkron" : "Rapor oncesi tekrar denenecek"}
+                          DB: {syncedScenarioIds[scenario.id] ? "Senkron" : "Rapor öncesi tekrar denenecek"}
                         </p>
                         <div className="mt-3 grid grid-cols-2 gap-2">
                           {(["wall", "roof", "window", "floor"] as const).map((key) => (
@@ -1170,7 +1170,7 @@ export default function DesignBuilderWorkspace() {
                 onClick={() => void runSequentialReportsAndComparison()}
               >
                 {isGeneratingReport || isOptimizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                Raporlama Sistemini Calistir
+                Raporlama Sistemini Çalıştır
               </Button>
             </CardContent>
           </Card>
@@ -1180,11 +1180,11 @@ export default function DesignBuilderWorkspace() {
               <div className="flex items-center gap-2">
                 <Database className="h-5 w-5 text-violet-700" />
                 <div>
-                  <p className="text-sm font-black text-slate-900">Satir Onizleme</p>
+                  <p className="text-sm font-black text-slate-900">Satır Önizleme</p>
                   <p className="text-xs text-slate-500">
                     {selectedPreviewScenario
-                      ? `${selectedPreviewScenario.name} dosyasinin normalize ilk satirlari`
-                      : "Secili dosyanin normalize ilk satirlari"}
+                      ? `${selectedPreviewScenario.name} dosyasının normalize ilk satırları`
+                      : "Seçili dosyanın normalize ilk satırları"}
                   </p>
                 </div>
               </div>
@@ -1193,10 +1193,10 @@ export default function DesignBuilderWorkspace() {
                   <TableHead>
                     <TableRow>
                       <TableHeaderCell>#</TableHeaderCell>
-                      <TableHeaderCell>Timestamp</TableHeaderCell>
-                      <TableHeaderCell>Zone</TableHeaderCell>
-                      <TableHeaderCell>Heating</TableHeaderCell>
-                      <TableHeaderCell>Cooling</TableHeaderCell>
+                      <TableHeaderCell>Zaman</TableHeaderCell>
+                      <TableHeaderCell>Zon</TableHeaderCell>
+                      <TableHeaderCell>Isıtma</TableHeaderCell>
+                      <TableHeaderCell>Soğutma</TableHeaderCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -1225,22 +1225,22 @@ export default function DesignBuilderWorkspace() {
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 text-blue-700" />
                   <div>
-                    <p className="text-sm font-black text-slate-900">Cok Dosyali Raporlama</p>
+                    <p className="text-sm font-black text-slate-900">Çok Dosyalı Raporlama</p>
                     <p className="text-xs text-slate-500">
                       {projectScenarios.length > 0
-                        ? `${projectScenarios.length} dosya icin ${totalReportSteps} bolum adimi calisir; hepsi tamamlaninca karsilastirma baslar.`
-                        : "Dosya yukleyince her dosya ayri rapor sayfasi olarak hazirlanir."}
+                        ? `${projectScenarios.length} dosya için ${totalReportSteps} bölüm adımı çalışır; hepsi tamamlanınca karşılaştırma başlar.`
+                        : "Dosya yükleyince her dosya ayrı rapor sayfası olarak hazırlanır."}
                     </p>
                   </div>
                 </div>
                 <Button type="button" onClick={() => void runSequentialReportsAndComparison()} disabled={isGeneratingReport || projectScenarios.length === 0}>
                   {isGeneratingReport ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                  Tum Dosyalari Raporla
+                  Tüm Dosyaları Raporla
                 </Button>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-600">
-                  <span>Toplam bolum ilerlemesi</span>
+                  <span>Toplam bölüm ilerlemesi</span>
                   <span>
                     {completedReportSteps}/{totalReportSteps || 0}
                   </span>
@@ -1265,23 +1265,23 @@ export default function DesignBuilderWorkspace() {
                         <div>
                           <p className="text-sm font-black">{scenario.name}</p>
                           <p className="mt-1 text-xs font-semibold opacity-80">
-                            10 bolum · {scenarioRowsById[scenario.id]?.length ?? 0} satir
+                            10 bölüm · {scenarioRowsById[scenario.id]?.length ?? 0} satır
                           </p>
                         </div>
                         {status === "generating" ? <Loader2 className="h-4 w-4 animate-spin" /> : status === "completed" ? <CheckCircle2 className="h-4 w-4" /> : null}
                       </div>
                       <p className="mt-3 text-xs font-black uppercase">Durum: {status}</p>
                       <p className="mt-1 text-xs opacity-75">
-                        {reportGroupId ? "Rapor sayfasi hazir / tiklayip ac" : "Rapor henuz baslamadi"}
+                        {reportGroupId ? "Rapor sayfası hazır / tıklayıp aç" : "Rapor henüz başlamadı"}
                       </p>
                     </button>
                   );
                 })}
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                <p className="font-black text-slate-900">Akis Gunlugu</p>
+                <p className="font-black text-slate-900">Akış Günlüğü</p>
                 <div className="mt-2 space-y-1">
-                  {workflowLog.length === 0 ? <p>Henuz akis baslatilmadi.</p> : workflowLog.map((line) => <p key={line}>{line}</p>)}
+                  {workflowLog.length === 0 ? <p>Henüz akış başlatılmadı.</p> : workflowLog.map((line) => <p key={line}>{line}</p>)}
                 </div>
               </div>
               {optimizationError ? (
@@ -1294,10 +1294,10 @@ export default function DesignBuilderWorkspace() {
 
           {activeReportScenario ? (
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Secili Dosya Rapor Sayfasi</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Seçili Dosya Rapor Sayfası</p>
               <h3 className="mt-1 text-xl font-black text-slate-900">{activeReportScenario.name}</h3>
               <p className="mt-1 text-sm text-slate-600">
-                Her bolum kendi renkli kartinda uretilir, duzenlenir ve yeniden uretilebilir.
+                Her bölüm kendi renkli kartında üretilir, düzenlenir ve yeniden üretilebilir.
               </p>
             </div>
           ) : null}
@@ -1309,7 +1309,7 @@ export default function DesignBuilderWorkspace() {
               <div className="rounded-3xl border border-cyan-100 bg-white p-5 shadow-sm">
                 <div className="mb-4 flex items-center gap-3">
                   <CheckCircle2 className="h-5 w-5 text-cyan-700" />
-                  <p className="text-sm font-black text-slate-900">Muhendis Denetimi</p>
+                  <p className="text-sm font-black text-slate-900">Mühendis Denetimi</p>
                 </div>
                 <ReportEditor
                   reportGroupId={activeReportGroupId}
@@ -1331,11 +1331,11 @@ export default function DesignBuilderWorkspace() {
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-black text-slate-900">Karsilastirma Raporu</p>
+                  <p className="text-sm font-black text-slate-900">Karşılaştırma Raporu</p>
                   <p className="text-xs text-slate-500">
                     {reportsReady
-                      ? "Tum senaryo raporlari tamamlandi; karsilastirma raporu rapor metinlerinden olusturulur."
-                      : `${completedReportCount}/${projectScenarios.length} rapor tamamlandi.`}
+                      ? "Tüm senaryo raporları tamamlandı; karşılaştırma raporu rapor metinlerinden oluşturulur."
+                      : `${completedReportCount}/${projectScenarios.length} rapor tamamlandı.`}
                   </p>
                 </div>
                 <Button
@@ -1345,7 +1345,7 @@ export default function DesignBuilderWorkspace() {
                   onClick={() => void runComparison(projectScenarios.map((scenario) => scenario.id))}
                 >
                   {isOptimizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}
-                  Karsilastirma Raporunu Uret
+                  Karşılaştırma Raporunu Üret
                 </Button>
               </div>
               {optimizationError ? <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{optimizationError}</p> : null}

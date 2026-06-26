@@ -3,8 +3,8 @@ import Link from "next/link";
 import HistoryExplorer from "@/components/HistoryExplorer";
 
 export const metadata = {
-  title: "Gecmis Sonuclar",
-  description: "Mevcut sistem ve DesignBuilder analiz gecmisi",
+  title: "Geçmiş Sonuçlar",
+  description: "Mevcut sistem ve DesignBuilder analiz geçmişi",
 };
 
 export default function HistoryPage() {
@@ -18,9 +18,9 @@ export default function HistoryPage() {
           <Link href="/designbuilder" className="rounded-xl px-3 py-2 text-xs font-bold text-slate-600">
             DesignBuilder
           </Link>
-          <span className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">Gecmis</span>
+          <span className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">Geçmiş</span>
           <Link href="/qr-olusturucu" className="rounded-xl px-3 py-2 text-xs font-bold text-slate-600">
-            QR Olusturucu
+            QR Oluşturucu
           </Link>
         </nav>
 

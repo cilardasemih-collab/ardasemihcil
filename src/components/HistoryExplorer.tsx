@@ -61,10 +61,10 @@ type ComparisonPayload = {
 };
 
 const filters: Array<{ key: FilterKey; label: string }> = [
-  { key: "all", label: "Tum Kayitlar" },
+  { key: "all", label: "Tüm Kayıtlar" },
   { key: "csv_analysis", label: "Mevcut Sistem" },
   { key: "designbuilder_report", label: "DesignBuilder Rapor" },
-  { key: "designbuilder_comparison", label: "Karsilastirma" },
+  { key: "designbuilder_comparison", label: "Karşılaştırma" },
 ];
 
 const formatDate = (value: string) => {
@@ -85,7 +85,7 @@ const getTypeMeta = (type: HistoryItem["type"]) => {
   if (type === "designbuilder_report") {
     return { label: "DesignBuilder Rapor", icon: BarChart3, className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
   }
-  return { label: "Karsilastirma", icon: Trophy, className: "border-amber-200 bg-amber-50 text-amber-800" };
+  return { label: "Karşılaştırma", icon: Trophy, className: "border-amber-200 bg-amber-50 text-amber-800" };
 };
 
 const asComparisonPayload = (value: unknown): ComparisonPayload => {
@@ -116,13 +116,13 @@ export default function HistoryExplorer() {
         };
 
         if (!response.ok || payload.success === false) {
-          throw new Error(payload.error ?? "Gecmis kayitlari okunamadi.");
+          throw new Error(payload.error ?? "Geçmiş kayıtları okunamadı.");
         }
 
         setItems(Array.isArray(payload.items) ? payload.items : []);
         setWarnings(Array.isArray(payload.warnings) ? payload.warnings : []);
       } catch {
-        setErrorMessage("Gecmis kayitlari su an yuklenemiyor.");
+        setErrorMessage("Geçmiş kayıtları şu an yüklenemiyor.");
       } finally {
         setLoading(false);
       }
@@ -153,15 +153,15 @@ export default function HistoryExplorer() {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-slate-600">
               <History className="h-3.5 w-3.5" />
-              Kayit Merkezi
+              Kayıt Merkezi
             </p>
-            <h1 className="mt-4 text-4xl font-black leading-tight text-slate-900 md:text-5xl">Gecmis Sonuclar</h1>
+            <h1 className="mt-4 text-4xl font-black leading-tight text-slate-900 md:text-5xl">Geçmiş Sonuçlar</h1>
             <p className="mt-3 max-w-2xl text-sm text-slate-600">
-              Mevcut sistem analizleri, DesignBuilder bolumlu raporlari ve karsilastirma sonuclari burada birlikte listelenir.
+              Mevcut sistem analizleri, DesignBuilder bölümlü raporları ve karşılaştırma sonuçları burada birlikte listelenir.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Toplam Kayit</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Toplam Kayıt</p>
             <p className="text-3xl font-black text-slate-900">{items.length}</p>
           </div>
         </div>
@@ -191,7 +191,7 @@ export default function HistoryExplorer() {
       {loading ? (
         <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Gecmis kayitlari yukleniyor...
+          Geçmiş kayıtları yükleniyor...
         </div>
       ) : null}
 
@@ -202,7 +202,7 @@ export default function HistoryExplorer() {
       ) : null}
 
       {!loading && !errorMessage && filteredItems.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Bu filtrede kayit bulunmuyor.</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Bu filtrede kayıt bulunmuyor.</div>
       ) : null}
 
       <div className="space-y-3">
@@ -229,8 +229,8 @@ export default function HistoryExplorer() {
                 {item.type === "csv_analysis" ? (
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <Metric label="Tasarruf" value={numberFmt(item.summary.savingsAmount)} tone="emerald" />
-                    <Metric label="Eski Tuketim" value={numberFmt(item.summary.oldTotalEnergy)} />
-                    <Metric label="Yeni Tuketim" value={numberFmt(item.summary.newTotalEnergy)} />
+                    <Metric label="Eski Tüketim" value={numberFmt(item.summary.oldTotalEnergy)} />
+                    <Metric label="Yeni Tüketim" value={numberFmt(item.summary.newTotalEnergy)} />
                   </div>
                 ) : null}
 
@@ -238,7 +238,7 @@ export default function HistoryExplorer() {
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <Metric label="Proje" value={item.projectName} />
                     <Metric label="Senaryo" value={item.scenarioName} />
-                    <Metric label="Bolum" value={`${item.summary.completedCount}/${item.summary.totalCount}`} tone="emerald" />
+                    <Metric label="Bölüm" value={`${item.summary.completedCount}/${item.summary.totalCount}`} tone="emerald" />
                   </div>
                 ) : null}
 
@@ -246,7 +246,7 @@ export default function HistoryExplorer() {
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <Metric label="Proje" value={item.projectName} />
                     <Metric label="Kazanan" value={item.winnerScenarioName ?? "-"} tone="amber" />
-                    <Metric label="Senaryo Sayisi" value={String(item.scenarioIds.length)} />
+                    <Metric label="Senaryo Sayısı" value={String(item.scenarioIds.length)} />
                   </div>
                 ) : null}
               </button>
@@ -280,10 +280,10 @@ function HistoryDetails({ item }: { item: HistoryItem }) {
   if (item.type === "csv_analysis") {
     return (
       <div className="mt-4 space-y-4 border-t border-slate-200 pt-4">
-        <Metric label="Optimizasyon Yontemi" value={item.summary.optimizationMethod} />
+        <Metric label="Optimizasyon Yöntemi" value={item.summary.optimizationMethod} />
         {item.report ? (
           <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Kayitli Rapor</p>
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Kayıtlı Rapor</p>
             <div className="prose prose-slate max-w-none prose-headings:text-slate-900 prose-strong:text-slate-900">
               <ReactMarkdown>{item.report}</ReactMarkdown>
             </div>
@@ -315,7 +315,7 @@ function HistoryDetails({ item }: { item: HistoryItem }) {
                   <ReactMarkdown>{section.content}</ReactMarkdown>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">Bu bolum henuz tamamlanmamis.</p>
+                <p className="text-sm text-slate-500">Bu bölüm henüz tamamlanmamış.</p>
               )}
             </article>
           ))}
@@ -330,7 +330,7 @@ function HistoryDetails({ item }: { item: HistoryItem }) {
     <div className="mt-4 space-y-4 border-t border-slate-200 pt-4">
       {payload.strategistSummary ? (
         <article className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-800">Stratejist Ozeti</p>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-800">Stratejist Özeti</p>
           <div className="prose prose-slate max-w-none prose-strong:text-amber-900">
             <ReactMarkdown>{payload.strategistSummary}</ReactMarkdown>
           </div>
